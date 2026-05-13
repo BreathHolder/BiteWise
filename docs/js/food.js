@@ -4,14 +4,11 @@
 // Rate limits apply: be conservative with requests and cache results locally.
 
 import { Foods } from './db.js';
-import { CONFIG } from './config.js';
 
 const USDA_BASE = 'https://api.nal.usda.gov/fdc/v1';
 
-// Uses the key from config.js. DEMO_KEY allows 1,000 requests/hour and 10,000/day,
-// which is sufficient for personal use. Register a free key at https://api.data.gov/signup/
-// and set USDA_API_KEY in your config.js for higher limits.
-const API_KEY = CONFIG.USDA_API_KEY || 'DEMO_KEY';
+// DEMO_KEY allows 1,000 requests/hour and 10,000/day, which is sufficient for personal use.
+const API_KEY = 'DEMO_KEY';
 
 // Nutrient ID mappings from FoodData Central
 // Full list: https://fdc.nal.usda.gov/food-details/1104358/nutrients

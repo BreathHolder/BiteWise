@@ -1,23 +1,15 @@
-// settings.js - App settings, targets, and cloud sync management
+// settings.js - App settings and targets
 
-import { Profile, Targets, SyncMeta } from './db.js';
-import { Auth } from './auth.js';
-import { Sync } from './sync.js';
+import { Profile, Targets } from './db.js';
 import { showToast } from './app.js';
 
 const SettingsScreen = {
 
   async render(container) {
-    const [profile, targets, provider, lastSync] = await Promise.all([
+    const [profile, targets] = await Promise.all([
       Profile.get(),
-      Targets.getActive(),
-      Auth.getProvider(),
-      Sync.getLastSyncDisplay()
+      Targets.getActive()
     ]);
-
-    const providerLabel = provider === 'microsoft' ? 'OneDrive'
-      : provider === 'google' ? 'Google Drive'
-      : 'Not connected';
 
     container.innerHTML = `
       <div class="page-header">
@@ -74,25 +66,14 @@ const SettingsScreen = {
             <div class="settings-row-arrow">›</div>
           </div>
 
-          <!-- Cloud Backup -->
-          <div class="settings-section-title">Cloud Backup</div>
-          <div class="settings-row" id="btn-sync-now" ${!provider ? 'style="opacity:0.5;pointer-events:none;"' : ''}>
-            <div class="settings-row-left">
-              <div class="settings-row-icon">☁️</div>
-              <div>
-                <div class="settings-row-label">Sync now</div>
-                <div class="settings-row-sub">Last synced: ${lastSync}</div>
-              </div>
-            </div>
-            <div class="settings-row-arrow">›</div>
-          </div>
-
+          <!-- Local Data -->
+          <div class="settings-section-title">Local Data</div>
           <div class="settings-row" id="btn-manage-cloud">
             <div class="settings-row-left">
-              <div class="settings-row-icon">${provider === 'microsoft' ? '☁️' : provider === 'google' ? '🔵' : '🔗'}</div>
+              <div class="settings-row-icon">💾</div>
               <div>
-                <div class="settings-row-label">Cloud provider</div>
-                <div class="settings-row-sub">${providerLabel}</div>
+                <div class="settings-row-label">Storage</div>
+                <div class="settings-row-sub">Stored locally on this device</div>
               </div>
             </div>
             <div class="settings-row-arrow">›</div>
@@ -161,17 +142,6 @@ const SettingsScreen = {
       this.renderEditUnits(profile, container);
     });
 
-    document.getElementById('btn-sync-now').addEventListener('click', async () => {
-      showToast('Syncing...', 'info');
-      try {
-        await Sync.backup();
-        showToast('Synced successfully!', 'success');
-        await this.render(container);
-      } catch (err) {
-        showToast('Sync failed: ' + err.message, 'error');
-      }
-    });
-
     document.getElementById('btn-manage-cloud').addEventListener('click', () => {
       this.renderManageCloud(container);
     });
@@ -184,9 +154,9 @@ const SettingsScreen = {
           No data is transmitted to any server run by this application.
         </p>
         <p style="font-size:0.92rem;line-height:1.7;color:var(--text-mid);margin-top:12px;">
-          If you choose to connect OneDrive or Google Drive, your data is backed up
-          directly to your personal cloud storage using OAuth tokens stored only
-          on your device. BiteWise never has access to your cloud credentials.
+          Cloud backup and restore are temporarily disabled while the OAuth flow is
+          being reworked. Until then, your profile, logs, foods, recipes, and targets
+          remain local to this browser profile.
         </p>
         <p style="font-size:0.92rem;line-height:1.7;color:var(--text-mid);margin-top:12px;">
           This application is open source (GPL-3.0) and hosted on GitHub Pages.
@@ -342,59 +312,18 @@ const SettingsScreen = {
   },
 
   renderManageCloud(container) {
-    this.openModal('Cloud Provider');
+    this.openModal('Local Storage');
     const body = document.getElementById('settings-modal-body');
 
     body.innerHTML = `
       <p style="font-size:0.88rem;color:var(--text-muted);margin-bottom:20px;line-height:1.5;">
-        Connect a cloud drive to automatically back up your data. Your data is stored directly in your personal cloud storage.
+        BiteWise is currently running in local-only mode. Your data is stored in
+        this browser's IndexedDB database and no OAuth sign-in is required.
       </p>
-
-      <div class="provider-option" id="cloud-onedrive" role="button" tabindex="0">
-        <div class="provider-icon microsoft">☁️</div>
-        <div class="provider-info">
-          <h3>OneDrive</h3>
-          <p>Microsoft personal account</p>
-        </div>
-      </div>
-
-      <div class="provider-option" id="cloud-google" role="button" tabindex="0">
-        <div class="provider-icon google">🔵</div>
-        <div class="provider-info">
-          <h3>Google Drive</h3>
-          <p>Google personal account</p>
-        </div>
-      </div>
-
-      <div style="margin-top:16px;border-top:1px solid var(--border-soft);padding-top:16px;">
-        <button class="btn btn-danger btn-full" id="btn-disconnect-cloud">
-          Disconnect cloud backup
-        </button>
-      </div>
+      <p style="font-size:0.88rem;color:var(--text-muted);line-height:1.5;">
+        Cloud backup and restore will return after OAuth support is fixed.
+      </p>
     `;
-
-    document.getElementById('cloud-onedrive').addEventListener('click', async () => {
-      try {
-        await Auth.Microsoft.startLogin();
-      } catch (err) {
-        showToast(err.message, 'error', 6000);
-      }
-    });
-
-    document.getElementById('cloud-google').addEventListener('click', async () => {
-      try {
-        await Auth.Google.startLogin();
-      } catch (err) {
-        showToast(err.message, 'error', 6000);
-      }
-    });
-
-    document.getElementById('btn-disconnect-cloud').addEventListener('click', async () => {
-      await Auth.disconnectAll();
-      showToast('Cloud backup disconnected', 'info');
-      document.getElementById('settings-modal').classList.remove('open');
-      await this.render(container);
-    });
   }
 };
 
