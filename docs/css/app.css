@@ -374,6 +374,12 @@ ul, ol { list-style: none; }
 
 .form-input::placeholder { color: var(--text-light); }
 
+.date-fields {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(72px, 0.8fr) minmax(92px, 1fr);
+  gap: 8px;
+}
+
 .form-select {
   width: 100%;
   padding: 12px 36px 12px 14px;
@@ -392,6 +398,12 @@ ul, ol { list-style: none; }
   outline: none;
   border-color: var(--green-500);
   box-shadow: 0 0 0 3px rgba(61, 107, 61, 0.12);
+}
+
+@media (max-width: 380px) {
+  .date-fields {
+    grid-template-columns: 1fr;
+  }
 }
 
 .form-hint {

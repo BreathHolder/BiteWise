@@ -6,6 +6,33 @@ import { Auth } from './auth.js';
 import { Sync } from './sync.js';
 import { showToast } from './app.js';
 
+const monthOptions = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+].map((month, index) => `<option value="${String(index + 1).padStart(2, '0')}">${month}</option>`).join('');
+
+function getDateOfBirthValue(prefix) {
+  const month = document.getElementById(`${prefix}-month`).value;
+  const dayRaw = document.getElementById(`${prefix}-day`).value;
+  const year = document.getElementById(`${prefix}-year`).value;
+
+  if (!month || !dayRaw || !year) return '';
+
+  const day = dayRaw.padStart(2, '0');
+  const dob = `${year}-${month}-${day}`;
+  const parsed = new Date(`${dob}T00:00:00Z`);
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getUTCFullYear() !== Number(year) ||
+    parsed.getUTCMonth() + 1 !== Number(month) ||
+    parsed.getUTCDate() !== Number(day)
+  ) {
+    return '';
+  }
+
+  return dob;
+}
+
 // ─── Onboarding Orchestrator ──────────────────────────────────────────────────
 
 const Onboarding = {
@@ -97,15 +124,37 @@ const Onboarding = {
             </div>
 
             <div class="form-group fade-up fade-up-3">
-              <label class="form-label" for="input-dob">
+              <label class="form-label" for="input-dob-month">
                 Date of birth <span class="required">*</span>
               </label>
-              <input
-                class="form-input"
-                type="date"
-                id="input-dob"
-                required
-              />
+              <div class="date-fields">
+                <select class="form-select" id="input-dob-month" aria-label="Birth month" required>
+                  <option value="">Month</option>
+                  ${monthOptions}
+                </select>
+                <input
+                  class="form-input"
+                  type="number"
+                  id="input-dob-day"
+                  min="1"
+                  max="31"
+                  placeholder="Day"
+                  aria-label="Birth day"
+                  inputmode="numeric"
+                  required
+                />
+                <input
+                  class="form-input"
+                  type="number"
+                  id="input-dob-year"
+                  min="1900"
+                  max="${new Date().getFullYear()}"
+                  placeholder="Year"
+                  aria-label="Birth year"
+                  inputmode="numeric"
+                  required
+                />
+              </div>
             </div>
 
             <div class="form-group fade-up fade-up-4">
@@ -146,13 +195,13 @@ const Onboarding = {
     document.getElementById('profile-form').addEventListener('submit', async (e) => {
       e.preventDefault();
       const name  = document.getElementById('input-name').value.trim();
-      const dob   = document.getElementById('input-dob').value;
+      const dob   = getDateOfBirthValue('input-dob');
       const email = document.getElementById('input-email').value.trim();
       const units = document.getElementById('input-units').value;
       const errorEl = document.getElementById('profile-error');
 
       if (!name || !dob || !email) {
-        errorEl.textContent = 'Please fill in all required fields.';
+        errorEl.textContent = 'Please fill in all required fields with a valid date of birth.';
         errorEl.style.display = 'block';
         return;
       }

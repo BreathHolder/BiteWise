@@ -5,6 +5,39 @@ import { Auth } from './auth.js';
 import { Sync } from './sync.js';
 import { showToast } from './app.js';
 
+const monthOptions = [
+  'January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'
+].map((month, index) => `<option value="${String(index + 1).padStart(2, '0')}">${month}</option>`).join('');
+
+function getDateParts(dob) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dob || '');
+  return match ? { year: match[1], month: match[2], day: String(Number(match[3])) } : { year: '', month: '', day: '' };
+}
+
+function getDateOfBirthValue(prefix, required = false) {
+  const month = document.getElementById(`${prefix}-month`).value;
+  const dayRaw = document.getElementById(`${prefix}-day`).value;
+  const year = document.getElementById(`${prefix}-year`).value;
+
+  if (!month && !dayRaw && !year && !required) return '';
+  if (!month || !dayRaw || !year) return null;
+
+  const day = dayRaw.padStart(2, '0');
+  const dob = `${year}-${month}-${day}`;
+  const parsed = new Date(`${dob}T00:00:00Z`);
+  if (
+    Number.isNaN(parsed.getTime()) ||
+    parsed.getUTCFullYear() !== Number(year) ||
+    parsed.getUTCMonth() + 1 !== Number(month) ||
+    parsed.getUTCDate() !== Number(day)
+  ) {
+    return null;
+  }
+
+  return dob;
+}
+
 const SettingsScreen = {
 
   async render(container) {
@@ -204,14 +237,42 @@ const SettingsScreen = {
   renderEditProfile(profile, container) {
     this.openModal('Edit Profile');
     const body = document.getElementById('settings-modal-body');
+    const dobParts = getDateParts(profile?.dob);
     body.innerHTML = `
       <div class="form-group">
         <label class="form-label">Full name <span class="required">*</span></label>
         <input class="form-input" type="text" id="ep-name" value="${profile?.name || ''}" />
       </div>
       <div class="form-group">
-        <label class="form-label">Date of birth</label>
-        <input class="form-input" type="date" id="ep-dob" value="${profile?.dob || ''}" />
+        <label class="form-label" for="ep-dob-month">Date of birth</label>
+        <div class="date-fields">
+          <select class="form-select" id="ep-dob-month" aria-label="Birth month">
+            <option value="">Month</option>
+            ${monthOptions}
+          </select>
+          <input
+            class="form-input"
+            type="number"
+            id="ep-dob-day"
+            min="1"
+            max="31"
+            placeholder="Day"
+            aria-label="Birth day"
+            inputmode="numeric"
+            value="${dobParts.day}"
+          />
+          <input
+            class="form-input"
+            type="number"
+            id="ep-dob-year"
+            min="1900"
+            max="${new Date().getFullYear()}"
+            placeholder="Year"
+            aria-label="Birth year"
+            inputmode="numeric"
+            value="${dobParts.year}"
+          />
+        </div>
       </div>
       <div class="form-group">
         <label class="form-label">Email address</label>
@@ -220,11 +281,18 @@ const SettingsScreen = {
       <div id="ep-error" class="form-error" style="display:none;margin-bottom:12px;"></div>
       <button class="btn btn-primary btn-full" id="btn-save-profile">Save changes</button>
     `;
+    document.getElementById('ep-dob-month').value = dobParts.month;
 
     document.getElementById('btn-save-profile').addEventListener('click', async () => {
       const name = document.getElementById('ep-name').value.trim();
+      const dob = getDateOfBirthValue('ep-dob');
       if (!name) {
         document.getElementById('ep-error').textContent = 'Name is required.';
+        document.getElementById('ep-error').style.display = 'block';
+        return;
+      }
+      if (dob === null) {
+        document.getElementById('ep-error').textContent = 'Please enter a valid date of birth.';
         document.getElementById('ep-error').style.display = 'block';
         return;
       }
@@ -233,7 +301,7 @@ const SettingsScreen = {
         await Profile.save({
           ...profile,
           name,
-          dob:   document.getElementById('ep-dob').value,
+          dob,
           email: document.getElementById('ep-email').value.trim()
         });
         showToast('Profile updated', 'success');
