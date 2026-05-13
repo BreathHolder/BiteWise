@@ -474,7 +474,10 @@ const SettingsScreen = {
       <button class="btn btn-primary btn-full" id="btn-save-usda-key">Save key</button>
       ${status.hasCustomKey ? `<button class="btn btn-ghost btn-full" id="btn-clear-usda-key" style="margin-top:8px;color:var(--orange-500);">Use DEMO_KEY instead</button>` : ''}
       <p style="font-size:0.78rem;color:var(--text-light);margin-top:14px;line-height:1.5;">
-        Get a free key at fdc.nal.usda.gov/api-key-signup/.
+        Need a key? Get a free USDA API key at
+        <a href="https://fdc.nal.usda.gov/api-key-signup/" target="_blank" rel="noopener noreferrer" style="color:var(--green-700);font-weight:600;">
+          fdc.nal.usda.gov/api-key-signup/
+        </a>
       </p>
     `;
 
