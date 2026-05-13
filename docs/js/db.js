@@ -280,13 +280,25 @@ const Foods = {
   async get(id) {
     return get(STORES.FOODS, id);
   },
+  async getAll() {
+    return getAll(STORES.FOODS);
+  },
   async getCustom() {
     return getByIndex(STORES.FOODS, 'by_source', 'custom');
+  },
+  async getFavorites() {
+    const all = await getAll(STORES.FOODS);
+    return all
+      .filter(f => f.favorite)
+      .sort((a, b) => (b.favorite_at || '').localeCompare(a.favorite_at || ''));
   },
   async searchLocal(query) {
     const all = await getAll(STORES.FOODS);
     const q = query.toLowerCase();
-    return all.filter(f => f.name.toLowerCase().includes(q));
+    return all.filter(f =>
+      f.name.toLowerCase().includes(q) ||
+      (f.brand || '').toLowerCase().includes(q)
+    );
   }
 };
 

@@ -6,6 +6,7 @@
 import { Foods } from './db.js';
 
 const USDA_BASE = 'https://api.nal.usda.gov/fdc/v1';
+const USDA_SCHEMA_VERSION = 2;
 
 // DEMO_KEY allows 1,000 requests/hour and 10,000/day, which is sufficient for personal use.
 const API_KEY = 'DEMO_KEY';
@@ -22,6 +23,72 @@ const NUTRIENT_IDS = {
   sodium:         1093,  // Sodium (mg)
   saturated_fat:  1258   // Fatty acids, total saturated (g)
 };
+
+const GRAMS_PER_OUNCE = 28.349523125;
+
+function normalizeServingUnit(unit) {
+  const normalized = (unit || '').trim().toLowerCase();
+  if (['g', 'grm', 'gram', 'grams'].includes(normalized)) return 'g';
+  if (['oz', 'ounce', 'ounces'].includes(normalized)) return 'oz';
+  if (['ml', 'mlt', 'milliliter', 'milliliters'].includes(normalized)) return 'ml';
+  return unit || 'g';
+}
+
+function gramWeightForServing(size, unit) {
+  const amount = parseFloat(size);
+  if (!amount || amount <= 0) return null;
+
+  const normalizedUnit = normalizeServingUnit(unit);
+  if (normalizedUnit === 'g') return amount;
+  if (normalizedUnit === 'oz') return amount * GRAMS_PER_OUNCE;
+  if (normalizedUnit === 'ml') return amount;
+  return null;
+}
+
+function scaleNutritionValues(nutrition, factor) {
+  const scaled = {};
+  for (const [key, value] of Object.entries(nutrition)) {
+    scaled[key] = value !== null ? Math.round(value * factor * 10) / 10 : null;
+  }
+  return scaled;
+}
+
+function nutritionPerServing(nutrition, servingSize, servingUnit) {
+  const servingGrams = gramWeightForServing(servingSize, servingUnit);
+  return servingGrams ? scaleNutritionValues(nutrition, servingGrams / 100) : nutrition;
+}
+
+function parseAmount(value) {
+  if (!value) return 1;
+
+  const parts = value.trim().split(/\s+/);
+  return parts.reduce((sum, part) => {
+    if (part.includes('/')) {
+      const [num, den] = part.split('/').map(Number);
+      return den ? sum + (num / den) : sum;
+    }
+    const parsed = parseFloat(part);
+    return Number.isNaN(parsed) ? sum : sum + parsed;
+  }, 0) || 1;
+}
+
+function parseHouseholdPortion(text, gramWeight) {
+  if (!text || !gramWeight) return null;
+
+  const cleaned = text.replace(/\([^)]*\)/g, '').trim();
+  const match = cleaned.match(/^((?:\d+(?:\.\d+)?|\d+\/\d+)(?:\s+\d+\/\d+)?)?\s*(.+)$/);
+  if (!match) return null;
+
+  const unit = match[2].trim();
+  if (!unit) return null;
+
+  return {
+    id: 'household',
+    amount: parseAmount(match[1]),
+    unit,
+    gram_weight: gramWeight
+  };
+}
 
 // ─── USDA Search ──────────────────────────────────────────────────────────────
 
@@ -53,6 +120,9 @@ async function searchUSDA(query, pageSize = 20) {
   }
 
   const data = await response.json();
+  if (data.error) {
+    throw new Error(data.error.message || 'USDA search failed.');
+  }
   return (data.foods || []).map(normalizeUSDAFood);
 }
 
@@ -68,7 +138,7 @@ async function getFoodDetail(fdcId) {
 
   // Check local cache first
   const cached = await Foods.get(id);
-  if (cached) return cached;
+  if (cached?.usda_schema_version === USDA_SCHEMA_VERSION) return cached;
 
   const params = new URLSearchParams({ api_key: API_KEY });
   const response = await fetch(`${USDA_BASE}/food/${fdcId}?${params}`);
@@ -76,11 +146,50 @@ async function getFoodDetail(fdcId) {
   if (!response.ok) throw new Error(`USDA food detail failed: ${response.status}`);
 
   const data = await response.json();
+  if (data.error) {
+    throw new Error(data.error.message || 'USDA food detail failed.');
+  }
   const normalized = normalizeUSDAFoodDetail(data);
 
   // Cache locally
   await Foods.save(normalized);
   return normalized;
+}
+
+async function saveFavoriteFood(food) {
+  const existing = await Foods.get(food.id);
+  const saved = {
+    ...(existing || {}),
+    ...food,
+    favorite: true,
+    favorite_at: existing?.favorite_at || new Date().toISOString(),
+    saved_at: existing?.saved_at || new Date().toISOString()
+  };
+  await Foods.save(saved);
+  return saved;
+}
+
+async function removeFavoriteFood(food) {
+  const existing = await Foods.get(food.id);
+  if (!existing) return food;
+
+  const updated = {
+    ...existing,
+    favorite: false,
+    favorite_at: null
+  };
+  await Foods.save(updated);
+  return updated;
+}
+
+async function getFavoriteFoods() {
+  const favorites = (await Foods.getFavorites()).map(migrateCachedUSDAFood);
+  await Promise.all(
+    favorites
+      .filter(f => f.source === 'usda' && f.usda_schema_version === USDA_SCHEMA_VERSION)
+      .map(f => Foods.save(f).catch(() => null))
+  );
+  return favorites;
 }
 
 // ─── Normalization ────────────────────────────────────────────────────────────
@@ -89,7 +198,9 @@ async function getFoodDetail(fdcId) {
  * Normalize a USDA search result item to BiteWise's internal food schema.
  */
 function normalizeUSDAFood(item) {
-  const nutrition = extractNutrients(item.foodNutrients || []);
+  const servingSize = item.servingSize || 100;
+  const servingUnit = normalizeServingUnit(item.servingSizeUnit || 'g');
+  const nutrition = nutritionPerServing(extractNutrients(item.foodNutrients || []), servingSize, servingUnit);
 
   return {
     id: `usda_${item.fdcId}`,
@@ -99,9 +210,14 @@ function normalizeUSDAFood(item) {
     brand: item.brandOwner || item.brandName || null,
     category: item.foodCategory || null,
     data_type: item.dataType,
-    serving_size: item.servingSize || 100,
-    serving_unit: item.servingSizeUnit || 'g',
-    nutrition
+    serving_size: servingSize,
+    serving_unit: servingUnit,
+    portions: [
+      parseHouseholdPortion(item.householdServingFullText, gramWeightForServing(servingSize, servingUnit))
+    ].filter(Boolean),
+    nutrition,
+    saved_at: new Date().toISOString(),
+    usda_schema_version: USDA_SCHEMA_VERSION
   };
 }
 
@@ -109,7 +225,10 @@ function normalizeUSDAFood(item) {
  * Normalize a USDA food detail response to BiteWise's internal food schema.
  */
 function normalizeUSDAFoodDetail(item) {
-  const nutrition = extractNutrients(item.foodNutrients || []);
+  const servingSize = item.servingSize || 100;
+  const servingUnit = normalizeServingUnit(item.servingSizeUnit || 'g');
+  const servingGramWeight = gramWeightForServing(servingSize, servingUnit);
+  const nutrition = nutritionPerServing(extractNutrients(item.foodNutrients || []), servingSize, servingUnit);
 
   // Prefer labeled portions if available
   const portions = (item.foodPortions || []).map(p => ({
@@ -118,6 +237,13 @@ function normalizeUSDAFoodDetail(item) {
     unit: p.measureUnit?.name || p.portionDescription || 'serving',
     gram_weight: p.gramWeight
   }));
+  const householdPortion = parseHouseholdPortion(item.householdServingFullText, servingGramWeight);
+  if (
+    householdPortion &&
+    !portions.some(p => (p.unit || '').toLowerCase() === householdPortion.unit.toLowerCase())
+  ) {
+    portions.unshift(householdPortion);
+  }
 
   return {
     id: `usda_${item.fdcId}`,
@@ -127,11 +253,29 @@ function normalizeUSDAFoodDetail(item) {
     brand: item.brandOwner || item.brandName || null,
     category: item.foodCategory?.description || null,
     data_type: item.dataType,
-    serving_size: item.servingSize || 100,
-    serving_unit: item.servingSizeUnit || 'g',
+    serving_size: servingSize,
+    serving_unit: servingUnit,
     portions,
     nutrition,
+    saved_at: new Date().toISOString(),
+    usda_schema_version: USDA_SCHEMA_VERSION,
     fetched_at: new Date().toISOString()
+  };
+}
+
+function migrateCachedUSDAFood(food) {
+  if (food.source !== 'usda' || food.usda_schema_version === USDA_SCHEMA_VERSION) {
+    return food;
+  }
+
+  const servingSize = food.serving_size || 100;
+  const servingUnit = normalizeServingUnit(food.serving_unit || 'g');
+
+  return {
+    ...food,
+    serving_unit: servingUnit,
+    nutrition: nutritionPerServing(food.nutrition || {}, servingSize, servingUnit),
+    usda_schema_version: USDA_SCHEMA_VERSION
   };
 }
 
@@ -217,17 +361,27 @@ async function createCustomFood(foodData) {
  * @returns {Promise<Array>} Combined and deduplicated food results
  */
 async function searchFoods(query) {
-  const [local, usda] = await Promise.allSettled([
-    Foods.searchLocal(query),
-    searchUSDA(query)
-  ]);
+  const localResults = (await Foods.searchLocal(query)).map(migrateCachedUSDAFood);
 
-  const localResults = local.status === 'fulfilled' ? local.value : [];
-  const usdaResults = usda.status === 'fulfilled' ? usda.value : [];
+  await Promise.all(
+    localResults
+      .filter(f => f.source === 'usda' && f.usda_schema_version === USDA_SCHEMA_VERSION)
+      .map(f => Foods.save(f).catch(() => null))
+  );
+
+  const localFavorites = localResults.filter(f => f.favorite);
+  if (localFavorites.length) {
+    return [
+      ...localFavorites,
+      ...localResults.filter(f => !f.favorite)
+    ];
+  }
+
+  const usda = await searchUSDA(query);
 
   // Deduplicate: if a USDA food is already cached locally, prefer the cached version
   const localIds = new Set(localResults.map(f => f.id));
-  const filteredUSDA = usdaResults.filter(f => !localIds.has(f.id));
+  const filteredUSDA = usda.filter(f => !localIds.has(f.id));
 
   return [...localResults, ...filteredUSDA];
 }
@@ -315,6 +469,9 @@ const MEAL_SLOTS = [
 export {
   searchUSDA,
   getFoodDetail,
+  getFavoriteFoods,
+  removeFavoriteFood,
+  saveFavoriteFood,
   searchFoods,
   createCustomFood,
   scaleNutrition,

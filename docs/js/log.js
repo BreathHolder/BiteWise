@@ -1,7 +1,17 @@
 // log.js - Today's food and water log screen
 
 import { FoodLog, WaterLog, Targets, Profile, todayString } from './db.js';
-import { searchFoods, getFoodDetail, sumNutrition, formatNutrient, SNACK_MOTIVATIONS, MEAL_SLOTS } from './food.js';
+import {
+  searchFoods,
+  getFoodDetail,
+  getFavoriteFoods,
+  removeFavoriteFood,
+  saveFavoriteFood,
+  sumNutrition,
+  formatNutrient,
+  SNACK_MOTIVATIONS,
+  MEAL_SLOTS
+} from './food.js';
 import { showToast } from './app.js';
 
 // ─── Log Screen Renderer ──────────────────────────────────────────────────────
@@ -16,23 +26,40 @@ const LogScreen = {
     if (!amount || amount <= 0) return null;
 
     const normalizedUnit = (unit || '').trim().toLowerCase();
+    const portions = food.portions || [];
+    const matchingPortion = portions.find(p => {
+      const portionUnit = (p.unit || '').trim().toLowerCase();
+      return portionUnit === normalizedUnit && p.gram_weight;
+    });
+
+    if (matchingPortion) {
+      const portionAmount = parseFloat(matchingPortion.amount) || 1;
+      return amount * (matchingPortion.gram_weight / portionAmount);
+    }
 
     if (normalizedUnit === 'g' || normalizedUnit === 'gram' || normalizedUnit === 'grams') {
       return amount;
     }
 
-    if (normalizedUnit === 'oz' || normalizedUnit === 'ounce' || normalizedUnit === 'ounces') {
-      return amount * 28.349523125;
-    }
-
-    const portion = (food.portions || []).find(p => {
+    const cupPortion = portions.find(p => {
       const portionUnit = (p.unit || '').trim().toLowerCase();
-      return portionUnit === normalizedUnit && p.gram_weight;
+      return ['cup', 'cups'].includes(portionUnit) && p.gram_weight;
     });
 
-    if (portion) {
-      const portionAmount = parseFloat(portion.amount) || 1;
-      return amount * (portion.gram_weight / portionAmount);
+    if (normalizedUnit === 'fl oz' || normalizedUnit === 'fluid ounce' || normalizedUnit === 'fluid ounces') {
+      if (cupPortion) {
+        const cupAmount = parseFloat(cupPortion.amount) || 1;
+        return amount * (cupPortion.gram_weight / cupAmount / 8);
+      }
+      return null;
+    }
+
+    if (normalizedUnit === 'oz' || normalizedUnit === 'ounce' || normalizedUnit === 'ounces') {
+      if (cupPortion) {
+        const cupAmount = parseFloat(cupPortion.amount) || 1;
+        return amount * (cupPortion.gram_weight / cupAmount / 8);
+      }
+      return amount * 28.349523125;
     }
 
     return null;
@@ -57,6 +84,16 @@ const LogScreen = {
     }
 
     return nutrition;
+  },
+
+  async getBestFoodForSaving(food) {
+    if (food.source !== 'usda' || !food.fdc_id) return food;
+    try {
+      return await getFoodDetail(food.fdc_id);
+    } catch (err) {
+      console.warn('USDA detail unavailable while saving food; saving search result:', err);
+      return food;
+    }
   },
 
   async render(container) {
@@ -247,7 +284,9 @@ const LogScreen = {
   openFoodModal(slot, container) {
     const slotInfo = MEAL_SLOTS.find(s => s.value === slot);
     document.getElementById('modal-title').textContent = `Add to ${slotInfo?.label || slot}`;
-    this.renderModalSearch(slot, container);
+    this.renderModalSearch(slot, container).catch(err => {
+      document.getElementById('modal-body').innerHTML = `<div class="form-error">${err.message}</div>`;
+    });
     document.getElementById('food-modal').classList.add('open');
   },
 
@@ -255,7 +294,7 @@ const LogScreen = {
     document.getElementById('food-modal').classList.remove('open');
   },
 
-  renderModalSearch(slot, pageContainer) {
+  async renderModalSearch(slot, pageContainer) {
     const body = document.getElementById('modal-body');
     body.innerHTML = `
       <div class="search-bar form-group">
@@ -268,6 +307,7 @@ const LogScreen = {
           autocomplete="off"
         />
       </div>
+      <div id="saved-foods"></div>
       <div id="search-results"></div>
       <div style="margin-top:16px;border-top:1px solid var(--border-soft);padding-top:16px;">
         <button class="btn btn-secondary btn-full" id="btn-custom-food">
@@ -277,9 +317,18 @@ const LogScreen = {
     `;
 
     const searchInput = document.getElementById('food-search-input');
+    const savedDiv = document.getElementById('saved-foods');
     const resultsDiv = document.getElementById('search-results');
 
     searchInput.focus();
+
+    try {
+      const favorites = await getFavoriteFoods();
+      this.renderSavedFoods(favorites, slot, pageContainer, savedDiv);
+    } catch (err) {
+      savedDiv.innerHTML = '';
+      console.warn('Could not load saved foods:', err);
+    }
 
     searchInput.addEventListener('input', () => {
       clearTimeout(this.searchTimeout);
@@ -287,9 +336,11 @@ const LogScreen = {
 
       if (q.length < 2) {
         resultsDiv.innerHTML = '';
+        savedDiv.style.display = '';
         return;
       }
 
+      savedDiv.style.display = 'none';
       resultsDiv.innerHTML = '<div style="text-align:center;padding:20px;"><div class="spinner"></div></div>';
 
       this.searchTimeout = setTimeout(async () => {
@@ -307,22 +358,33 @@ const LogScreen = {
     });
   },
 
-  renderSearchResults(foods, slot, pageContainer, resultsDiv) {
+  renderSavedFoods(foods, slot, pageContainer, savedDiv) {
     if (!foods.length) {
-      resultsDiv.innerHTML = `
-        <div class="empty-state" style="padding:24px;">
-          <div class="empty-icon">🔍</div>
-          <div class="empty-title">No results found</div>
-          <div class="empty-sub">Try a different search term or add a custom food.</div>
-        </div>
-      `;
+      savedDiv.innerHTML = '';
       return;
     }
 
-    resultsDiv.innerHTML = `
+    savedDiv.innerHTML = `
+      <div class="saved-foods-section">
+        <div class="saved-foods-title">Saved foods</div>
+        ${this.renderFoodResultList(foods.slice(0, 8))}
+      </div>
+    `;
+    this.bindFoodResultItems(foods, slot, pageContainer, savedDiv);
+  },
+
+  renderFoodResultList(foods) {
+    return `
       <div class="food-result-list">
-        ${foods.slice(0, 15).map(food => `
+        ${foods.map(food => `
           <div class="food-result-item" data-food-id="${food.id}">
+            <button
+              class="food-favorite-btn ${food.favorite ? 'active' : ''}"
+              data-favorite-id="${food.id}"
+              aria-label="${food.favorite ? 'Unsave food' : 'Save food'}"
+              title="${food.favorite ? 'Unsave food' : 'Save food'}"
+              type="button"
+            >★</button>
             <span class="food-result-badge ${food.source === 'usda' ? 'badge-usda' : 'badge-custom'}">
               ${food.source === 'usda' ? 'USDA' : 'Custom'}
             </span>
@@ -338,8 +400,44 @@ const LogScreen = {
         `).join('')}
       </div>
     `;
+  },
 
-    resultsDiv.querySelectorAll('.food-result-item').forEach(item => {
+  renderSearchResults(foods, slot, pageContainer, resultsDiv) {
+    if (!foods.length) {
+      resultsDiv.innerHTML = `
+        <div class="empty-state" style="padding:24px;">
+          <div class="empty-icon">🔍</div>
+          <div class="empty-title">No results found</div>
+          <div class="empty-sub">Try a different search term or add a custom food.</div>
+        </div>
+      `;
+      return;
+    }
+
+    resultsDiv.innerHTML = this.renderFoodResultList(foods.slice(0, 15));
+    this.bindFoodResultItems(foods, slot, pageContainer, resultsDiv);
+  },
+
+  bindFoodResultItems(foods, slot, pageContainer, root) {
+    root.querySelectorAll('[data-favorite-id]').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const food = foods.find(f => f.id === btn.dataset.favoriteId);
+        if (!food) return;
+
+        const foodToSave = food.favorite ? food : await this.getBestFoodForSaving(food);
+        const updated = food.favorite
+          ? await removeFavoriteFood(food)
+          : await saveFavoriteFood({ ...foodToSave, favorite: food.favorite });
+        Object.assign(food, updated);
+        btn.classList.toggle('active', !!updated.favorite);
+        btn.setAttribute('aria-label', updated.favorite ? 'Unsave food' : 'Save food');
+        btn.setAttribute('title', updated.favorite ? 'Unsave food' : 'Save food');
+        showToast(updated.favorite ? 'Food saved' : 'Food unsaved', 'success');
+      });
+    });
+
+    root.querySelectorAll('.food-result-item').forEach(item => {
       item.addEventListener('click', async () => {
         const food = foods.find(f => f.id === item.dataset.foodId);
         if (!food) return;
@@ -350,8 +448,9 @@ const LogScreen = {
             const detailedFood = await getFoodDetail(food.fdc_id);
             this.renderPortionSelector(detailedFood, slot, pageContainer);
           } catch (err) {
-            showToast('Could not load serving details', 'error');
             item.style.opacity = '';
+            console.warn('USDA detail unavailable; using search result serving data:', err);
+            this.renderPortionSelector(food, slot, pageContainer);
           }
           return;
         }
@@ -368,8 +467,19 @@ const LogScreen = {
     body.innerHTML = `
       <div style="margin-bottom:20px;">
         <button class="btn btn-ghost btn-sm" id="btn-back-search" style="margin-bottom:12px;padding-left:0;">← Back</button>
-        <div style="font-size:1rem;font-weight:600;color:var(--text-dark);margin-bottom:4px;">${food.name}</div>
-        ${food.brand ? `<div style="font-size:0.8rem;color:var(--text-muted);">${food.brand}</div>` : ''}
+        <div style="display:flex;align-items:flex-start;gap:10px;">
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:1rem;font-weight:600;color:var(--text-dark);margin-bottom:4px;">${food.name}</div>
+            ${food.brand ? `<div style="font-size:0.8rem;color:var(--text-muted);">${food.brand}</div>` : ''}
+          </div>
+          <button
+            class="food-favorite-btn food-favorite-detail ${food.favorite ? 'active' : ''}"
+            id="btn-favorite-food"
+            aria-label="${food.favorite ? 'Unsave food' : 'Save food'}"
+            title="${food.favorite ? 'Unsave food' : 'Save food'}"
+            type="button"
+          >★</button>
+        </div>
       </div>
 
       <div class="form-group">
@@ -389,6 +499,7 @@ const LogScreen = {
             ${food.portions ? food.portions.map(p => `<option value="${p.unit}">${p.unit}</option>`).join('') : ''}
             <option value="g">g</option>
             <option value="oz">oz</option>
+            <option value="fl oz">fl oz</option>
           </select>
         </div>
       </div>
@@ -420,6 +531,19 @@ const LogScreen = {
 
     document.getElementById('btn-back-search').addEventListener('click', () => {
       this.renderModalSearch(slot, pageContainer);
+    });
+
+    document.getElementById('btn-favorite-food').addEventListener('click', async () => {
+      const foodToSave = food.favorite ? food : await this.getBestFoodForSaving(food);
+      const updated = food.favorite
+        ? await removeFavoriteFood(food)
+        : await saveFavoriteFood({ ...foodToSave, favorite: food.favorite });
+      Object.assign(food, updated);
+      const btn = document.getElementById('btn-favorite-food');
+      btn.classList.toggle('active', !!updated.favorite);
+      btn.setAttribute('aria-label', updated.favorite ? 'Unsave food' : 'Save food');
+      btn.setAttribute('title', updated.favorite ? 'Unsave food' : 'Save food');
+      showToast(updated.favorite ? 'Food saved' : 'Food unsaved', 'success');
     });
 
     document.getElementById('btn-log-food').addEventListener('click', async () => {

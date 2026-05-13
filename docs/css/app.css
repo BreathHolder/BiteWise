@@ -1086,6 +1086,19 @@ ul, ol { list-style: none; }
 }
 
 /* Food search results */
+.saved-foods-section {
+  margin-bottom: 16px;
+}
+
+.saved-foods-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+
 .food-result-list {
   display: flex;
   flex-direction: column;
@@ -1107,6 +1120,34 @@ ul, ol { list-style: none; }
 }
 
 .food-result-item:hover { background: var(--cream-50); }
+
+.food-favorite-btn {
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: var(--radius-full);
+  background: var(--cream-100);
+  color: var(--text-light);
+  font-size: 1.05rem;
+  line-height: 1;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: background 0.15s, color 0.15s, transform 0.15s;
+}
+
+.food-favorite-btn:hover {
+  background: var(--cream-200);
+  color: var(--orange-500);
+}
+
+.food-favorite-btn.active {
+  background: var(--orange-100);
+  color: var(--orange-500);
+}
+
+.food-favorite-detail {
+  margin-top: -4px;
+}
 
 .food-result-badge {
   font-size: 0.65rem;
