@@ -1,8 +1,6 @@
 // app.js - BiteWise application bootstrap, router, and toast system
 
 import { Profile, openDB } from './db.js';
-import { Auth } from './auth.js';
-import { Sync } from './sync.js';
 import { Onboarding } from './onboarding.js';
 import { LogScreen } from './log.js';
 import { DashboardScreen } from './dashboard.js';
@@ -60,39 +58,26 @@ const App = {
     // Ensure DB is open before anything else
     await openDB();
 
-    // Check for OAuth redirect callbacks first
-    const authResult = await Auth.handleRedirectIfPresent();
-
     // Check if user has completed onboarding
     const profileExists = await Profile.exists();
 
     if (!profileExists) {
       // First run: show onboarding
-      await this.startOnboarding(authResult);
+      await this.startOnboarding();
     } else {
       // Existing user: show main app
       this.renderApp();
-
-      // If we just got back from an OAuth flow, handle it
-      if (authResult) {
-        await this.handlePostAuthSync(authResult);
-      }
     }
   },
 
   // ─── Onboarding ─────────────────────────────────────────────────────────────
 
-  async startOnboarding(authResult) {
+  async startOnboarding() {
     const root = document.getElementById('app');
     root.innerHTML = '<div id="onboarding-container"></div><div id="toast-container"></div>';
 
     const container = document.getElementById('onboarding-container');
     await Onboarding.init(container);
-
-    // If an OAuth callback came in during onboarding
-    if (authResult) {
-      await Onboarding.handleAuthCallback(authResult);
-    }
 
     // Listen for onboarding completion
     window.addEventListener('onboarding-complete', async () => {
@@ -173,27 +158,6 @@ const App = {
           <div class="empty-sub">${err.message}</div>
         </div>
       `;
-    }
-  },
-
-  // ─── Post-Auth Cloud Sync ─────────────────────────────────────────────────
-
-  async handlePostAuthSync(authResult) {
-    if (!authResult.success) {
-      showToast(authResult.error || 'Authentication failed', 'error');
-      return;
-    }
-
-    const provider = authResult.provider === 'microsoft' ? 'OneDrive' : 'Google Drive';
-    showToast(`${provider} connected!`, 'success');
-
-    // Attempt to sync immediately
-    try {
-      await Sync.backup();
-      showToast('Data synced to ' + provider, 'success');
-    } catch (err) {
-      // Non-fatal: sync will retry next time
-      console.warn('Auto-sync after auth failed:', err.message);
     }
   }
 };
