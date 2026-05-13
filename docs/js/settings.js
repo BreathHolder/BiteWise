@@ -1,7 +1,7 @@
 // settings.js - App settings and targets
 
 import { Profile, Targets } from './db.js';
-import { clearUSDAApiKey, getUSDAApiKeyStatus, saveUSDAApiKey } from './food.js';
+import { clearUSDAApiKey, getUSDAApiKeyStatus, saveUSDAApiKey, validateUSDAApiKey } from './food.js';
 import { showToast } from './app.js';
 
 const monthOptions = [
@@ -480,14 +480,30 @@ const SettingsScreen = {
 
     document.getElementById('btn-save-usda-key').addEventListener('click', async () => {
       const value = document.getElementById('usda-api-key-input').value.trim();
+      const button = document.getElementById('btn-save-usda-key');
       if (!value) {
         showToast('Paste an API key first', 'error');
         return;
       }
-      await saveUSDAApiKey(value);
-      showToast('USDA API key saved', 'success');
-      document.getElementById('settings-modal').classList.remove('open');
-      await this.render(container);
+      button.disabled = true;
+      button.textContent = 'Validating...';
+      try {
+        const valid = await validateUSDAApiKey(value);
+        if (!valid) {
+          showToast('USDA API key was rejected', 'error');
+          button.disabled = false;
+          button.textContent = 'Save key';
+          return;
+        }
+        await saveUSDAApiKey(value);
+        showToast('USDA API key saved', 'success');
+        document.getElementById('settings-modal').classList.remove('open');
+        await this.render(container);
+      } catch (err) {
+        showToast('Could not validate API key', 'error');
+        button.disabled = false;
+        button.textContent = 'Save key';
+      }
     });
 
     document.getElementById('btn-clear-usda-key')?.addEventListener('click', async () => {

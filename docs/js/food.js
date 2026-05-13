@@ -31,6 +31,22 @@ async function saveUSDAApiKey(apiKey) {
   await SyncMeta.set(USDA_API_KEY_META, { value });
 }
 
+async function validateUSDAApiKey(apiKey) {
+  const value = apiKey.trim();
+  if (!value) return false;
+
+  const params = new URLSearchParams({
+    api_key: value,
+    query: 'apple',
+    pageSize: 1
+  });
+  const response = await fetch(`${USDA_BASE}/foods/search?${params}`);
+  if (!response.ok) return false;
+
+  const data = await response.json();
+  return !data.error && Array.isArray(data.foods);
+}
+
 async function clearUSDAApiKey() {
   await SyncMeta.remove(USDA_API_KEY_META);
 }
@@ -500,6 +516,7 @@ export {
   removeFavoriteFood,
   saveUSDAApiKey,
   saveFavoriteFood,
+  validateUSDAApiKey,
   searchFoods,
   createCustomFood,
   scaleNutrition,
