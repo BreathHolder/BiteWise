@@ -1099,6 +1099,15 @@ ul, ol { list-style: none; }
   margin-bottom: 8px;
 }
 
+.search-pending,
+.search-loading-more {
+  display: flex;
+  justify-content: center;
+  padding: 18px;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
 .food-result-list {
   display: flex;
   flex-direction: column;

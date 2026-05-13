@@ -20,6 +20,13 @@ const LogScreen = {
   date: null,
   waterUnit: 'oz',
   searchTimeout: null,
+  searchQuery: '',
+  searchInputValue: '',
+  searchPage: 1,
+  searchResults: [],
+  searchHasMore: false,
+  searchLoading: false,
+  searchScrollHandler: null,
 
   getServingGrams(food, qty, unit) {
     const amount = parseFloat(qty);
@@ -291,6 +298,7 @@ const LogScreen = {
   },
 
   closeModal() {
+    clearTimeout(this.searchTimeout);
     document.getElementById('food-modal').classList.remove('open');
   },
 
@@ -319,8 +327,15 @@ const LogScreen = {
     const searchInput = document.getElementById('food-search-input');
     const savedDiv = document.getElementById('saved-foods');
     const resultsDiv = document.getElementById('search-results');
+    const modalSheet = body.closest('.modal-sheet') || body;
 
     searchInput.focus();
+    this.searchQuery = '';
+    this.searchInputValue = '';
+    this.searchPage = 1;
+    this.searchResults = [];
+    this.searchHasMore = false;
+    this.searchLoading = false;
 
     try {
       const favorites = await getFavoriteFoods();
@@ -333,29 +348,78 @@ const LogScreen = {
     searchInput.addEventListener('input', () => {
       clearTimeout(this.searchTimeout);
       const q = searchInput.value.trim();
+      this.searchInputValue = q;
 
       if (q.length < 2) {
         resultsDiv.innerHTML = '';
         savedDiv.style.display = '';
+        this.searchQuery = '';
+        this.searchInputValue = '';
+        this.searchPage = 1;
+        this.searchResults = [];
+        this.searchHasMore = false;
         return;
       }
 
       savedDiv.style.display = 'none';
-      resultsDiv.innerHTML = '<div style="text-align:center;padding:20px;"><div class="spinner"></div></div>';
+      resultsDiv.innerHTML = '<div class="search-pending">Waiting for you to finish typing...</div>';
 
       this.searchTimeout = setTimeout(async () => {
-        try {
-          const foods = await searchFoods(q);
-          this.renderSearchResults(foods, slot, pageContainer, resultsDiv);
-        } catch (err) {
-          resultsDiv.innerHTML = `<div class="form-error" style="text-align:center;padding:12px;">${err.message}</div>`;
-        }
-      }, 400);
+        await this.loadFoodSearchPage(q, slot, pageContainer, resultsDiv, true);
+      }, 2000);
     });
+
+    if (this.searchScrollHandler) {
+      modalSheet.removeEventListener('scroll', this.searchScrollHandler);
+    }
+
+    this.searchScrollHandler = async () => {
+      if (!this.searchQuery || !this.searchHasMore || this.searchLoading) return;
+      const distanceFromBottom = modalSheet.scrollHeight - modalSheet.scrollTop - modalSheet.clientHeight;
+      if (distanceFromBottom < 120) {
+        await this.loadFoodSearchPage(this.searchQuery, slot, pageContainer, resultsDiv, false);
+      }
+    };
+    modalSheet.addEventListener('scroll', this.searchScrollHandler);
 
     document.getElementById('btn-custom-food').addEventListener('click', () => {
       this.renderCustomFoodForm(slot, pageContainer);
     });
+  },
+
+  async loadFoodSearchPage(query, slot, pageContainer, resultsDiv, reset) {
+    if (this.searchLoading) return;
+
+    this.searchLoading = true;
+    if (reset) {
+      this.searchQuery = query;
+      this.searchPage = 1;
+      this.searchResults = [];
+      this.searchHasMore = false;
+      resultsDiv.innerHTML = '<div style="text-align:center;padding:20px;"><div class="spinner"></div></div>';
+    } else {
+      this.searchPage += 1;
+      this.renderSearchResults(this.searchResults, slot, pageContainer, resultsDiv, true);
+    }
+
+    try {
+      const foods = await searchFoods(query, { page: this.searchPage, pageSize: 20 });
+      if (query !== this.searchInputValue) return;
+      this.searchResults = reset ? foods : [...this.searchResults, ...foods];
+      this.searchHasMore = foods.length >= 20 && !foods.some(f => f.favorite);
+      this.renderSearchResults(this.searchResults, slot, pageContainer, resultsDiv, this.searchHasMore);
+    } catch (err) {
+      if (reset) {
+        resultsDiv.innerHTML = `<div class="form-error" style="text-align:center;padding:12px;">${err.message}</div>`;
+      } else {
+        this.searchPage -= 1;
+        this.searchHasMore = false;
+        this.renderSearchResults(this.searchResults, slot, pageContainer, resultsDiv, false);
+        showToast(err.message, 'error');
+      }
+    } finally {
+      this.searchLoading = false;
+    }
   },
 
   renderSavedFoods(foods, slot, pageContainer, savedDiv) {
@@ -402,7 +466,7 @@ const LogScreen = {
     `;
   },
 
-  renderSearchResults(foods, slot, pageContainer, resultsDiv) {
+  renderSearchResults(foods, slot, pageContainer, resultsDiv, hasMore = false) {
     if (!foods.length) {
       resultsDiv.innerHTML = `
         <div class="empty-state" style="padding:24px;">
@@ -414,7 +478,10 @@ const LogScreen = {
       return;
     }
 
-    resultsDiv.innerHTML = this.renderFoodResultList(foods.slice(0, 15));
+    resultsDiv.innerHTML = `
+      ${this.renderFoodResultList(foods)}
+      ${hasMore ? '<div class="search-loading-more"><div class="spinner"></div></div>' : ''}
+    `;
     this.bindFoodResultItems(foods, slot, pageContainer, resultsDiv);
   },
 

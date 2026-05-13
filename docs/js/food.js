@@ -138,9 +138,10 @@ function parseHouseholdPortion(text, gramWeight) {
  *
  * @param {string} query - Search term (e.g., "apple", "cheddar cheese")
  * @param {number} pageSize - Number of results to return (max 50)
+ * @param {number} pageNumber - 1-based USDA page number
  * @returns {Promise<Array>} Normalized food objects
  */
-async function searchUSDA(query, pageSize = 20) {
+async function searchUSDA(query, pageSize = 20, pageNumber = 1) {
   if (!query || query.trim().length < 2) return [];
 
   const apiKey = await getUSDAApiKey();
@@ -148,6 +149,7 @@ async function searchUSDA(query, pageSize = 20) {
     api_key: apiKey,
     query: query.trim(),
     pageSize,
+    pageNumber,
     dataType: 'Foundation,SR Legacy,Branded',  // Include common and branded foods
     sortBy: 'dataType.keyword',
     sortOrder: 'asc'
@@ -401,7 +403,7 @@ async function createCustomFood(foodData) {
  * @param {string} query
  * @returns {Promise<Array>} Combined and deduplicated food results
  */
-async function searchFoods(query) {
+async function searchFoods(query, { page = 1, pageSize = 20 } = {}) {
   const localResults = (await Foods.searchLocal(query)).map(migrateCachedUSDAFood);
 
   await Promise.all(
@@ -410,21 +412,21 @@ async function searchFoods(query) {
       .map(f => Foods.save(f).catch(() => null))
   );
 
-  const localFavorites = localResults.filter(f => f.favorite);
-  if (localFavorites.length) {
+  const localFavorites = page === 1 ? localResults.filter(f => f.favorite) : [];
+  if (page === 1 && localFavorites.length) {
     return [
       ...localFavorites,
       ...localResults.filter(f => !f.favorite)
     ];
   }
 
-  const usda = await searchUSDA(query);
+  const usda = await searchUSDA(query, pageSize, page);
 
   // Deduplicate: if a USDA food is already cached locally, prefer the cached version
   const localIds = new Set(localResults.map(f => f.id));
   const filteredUSDA = usda.filter(f => !localIds.has(f.id));
 
-  return [...localResults, ...filteredUSDA];
+  return page === 1 ? [...localResults, ...filteredUSDA] : filteredUSDA;
 }
 
 // ─── Nutrition Summary Utilities ──────────────────────────────────────────────
