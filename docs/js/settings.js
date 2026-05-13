@@ -1,6 +1,7 @@
 // settings.js - App settings and targets
 
 import { Profile, Targets } from './db.js';
+import { clearUSDAApiKey, getUSDAApiKeyStatus, saveUSDAApiKey } from './food.js';
 import { showToast } from './app.js';
 
 const monthOptions = [
@@ -98,6 +99,16 @@ const SettingsScreen = {
             </div>
             <div class="settings-row-arrow">›</div>
           </div>
+          <div class="settings-row" id="btn-usda-api-key">
+            <div class="settings-row-left">
+              <div class="settings-row-icon">🔑</div>
+              <div>
+                <div class="settings-row-label">USDA API key</div>
+                <div class="settings-row-sub">Use your own FoodData Central key</div>
+              </div>
+            </div>
+            <div class="settings-row-arrow">›</div>
+          </div>
 
           <!-- Local Data -->
           <div class="settings-section-title">Local Data</div>
@@ -183,6 +194,10 @@ const SettingsScreen = {
 
     document.getElementById('btn-edit-units').addEventListener('click', () => {
       this.renderEditUnits(profile, container);
+    });
+
+    document.getElementById('btn-usda-api-key').addEventListener('click', () => {
+      this.renderUSDAApiKey(container);
     });
 
     document.getElementById('btn-manage-cloud').addEventListener('click', () => {
@@ -426,6 +441,58 @@ const SettingsScreen = {
       const unit = document.getElementById('unit-select').value;
       await Profile.save({ ...profile, water_unit: unit });
       showToast('Units updated', 'success');
+      document.getElementById('settings-modal').classList.remove('open');
+      await this.render(container);
+    });
+  },
+
+  async renderUSDAApiKey(container) {
+    this.openModal('USDA API Key');
+    const body = document.getElementById('settings-modal-body');
+    const status = await getUSDAApiKeyStatus();
+
+    body.innerHTML = `
+      <p style="font-size:0.88rem;color:var(--text-muted);margin-bottom:16px;line-height:1.5;">
+        BiteWise uses USDA FoodData Central for food search. Enter your own free
+        data.gov API key to avoid the stricter DEMO_KEY rate limit.
+      </p>
+      <div class="form-group">
+        <label class="form-label" for="usda-api-key-input">API key</label>
+        <input
+          class="form-input"
+          type="password"
+          id="usda-api-key-input"
+          placeholder="${status.hasCustomKey ? status.keyPreview : 'Paste your USDA API key'}"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+        />
+        <div class="form-hint">
+          ${status.hasCustomKey ? `Custom key saved: ${status.keyPreview}` : 'Stored only in this browser. The public app code cannot hide embedded keys.'}
+        </div>
+      </div>
+      <button class="btn btn-primary btn-full" id="btn-save-usda-key">Save key</button>
+      ${status.hasCustomKey ? `<button class="btn btn-ghost btn-full" id="btn-clear-usda-key" style="margin-top:8px;color:var(--orange-500);">Use DEMO_KEY instead</button>` : ''}
+      <p style="font-size:0.78rem;color:var(--text-light);margin-top:14px;line-height:1.5;">
+        Get a free key at fdc.nal.usda.gov/api-key-signup/.
+      </p>
+    `;
+
+    document.getElementById('btn-save-usda-key').addEventListener('click', async () => {
+      const value = document.getElementById('usda-api-key-input').value.trim();
+      if (!value) {
+        showToast('Paste an API key first', 'error');
+        return;
+      }
+      await saveUSDAApiKey(value);
+      showToast('USDA API key saved', 'success');
+      document.getElementById('settings-modal').classList.remove('open');
+      await this.render(container);
+    });
+
+    document.getElementById('btn-clear-usda-key')?.addEventListener('click', async () => {
+      await clearUSDAApiKey();
+      showToast('Using DEMO_KEY', 'info');
       document.getElementById('settings-modal').classList.remove('open');
       await this.render(container);
     });

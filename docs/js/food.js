@@ -3,13 +3,38 @@
 // The FoodData Central API is free and does not require an API key for basic search.
 // Rate limits apply: be conservative with requests and cache results locally.
 
-import { Foods } from './db.js';
+import { Foods, SyncMeta } from './db.js';
+import { CONFIG } from './config.js';
 
 const USDA_BASE = 'https://api.nal.usda.gov/fdc/v1';
 const USDA_SCHEMA_VERSION = 2;
+const USDA_API_KEY_META = 'usda_api_key';
 
-// DEMO_KEY allows 1,000 requests/hour and 10,000/day, which is sufficient for personal use.
-const API_KEY = 'DEMO_KEY';
+async function getUSDAApiKey() {
+  const saved = await SyncMeta.get(USDA_API_KEY_META);
+  return saved?.value || CONFIG?.USDA_API_KEY || 'DEMO_KEY';
+}
+
+async function getUSDAApiKeyStatus() {
+  const saved = await SyncMeta.get(USDA_API_KEY_META);
+  return {
+    hasCustomKey: !!saved?.value,
+    keyPreview: saved?.value ? `${saved.value.slice(0, 4)}...${saved.value.slice(-4)}` : null
+  };
+}
+
+async function saveUSDAApiKey(apiKey) {
+  const value = apiKey.trim();
+  if (!value) {
+    await SyncMeta.remove(USDA_API_KEY_META);
+    return;
+  }
+  await SyncMeta.set(USDA_API_KEY_META, { value });
+}
+
+async function clearUSDAApiKey() {
+  await SyncMeta.remove(USDA_API_KEY_META);
+}
 
 // Nutrient ID mappings from FoodData Central
 // Full list: https://fdc.nal.usda.gov/food-details/1104358/nutrients
@@ -103,8 +128,9 @@ function parseHouseholdPortion(text, gramWeight) {
 async function searchUSDA(query, pageSize = 20) {
   if (!query || query.trim().length < 2) return [];
 
+  const apiKey = await getUSDAApiKey();
   const params = new URLSearchParams({
-    api_key: API_KEY,
+    api_key: apiKey,
     query: query.trim(),
     pageSize,
     dataType: 'Foundation,SR Legacy,Branded',  // Include common and branded foods
@@ -140,7 +166,7 @@ async function getFoodDetail(fdcId) {
   const cached = await Foods.get(id);
   if (cached?.usda_schema_version === USDA_SCHEMA_VERSION) return cached;
 
-  const params = new URLSearchParams({ api_key: API_KEY });
+  const params = new URLSearchParams({ api_key: await getUSDAApiKey() });
   const response = await fetch(`${USDA_BASE}/food/${fdcId}?${params}`);
 
   if (!response.ok) throw new Error(`USDA food detail failed: ${response.status}`);
@@ -470,7 +496,10 @@ export {
   searchUSDA,
   getFoodDetail,
   getFavoriteFoods,
+  clearUSDAApiKey,
+  getUSDAApiKeyStatus,
   removeFavoriteFood,
+  saveUSDAApiKey,
   saveFavoriteFood,
   searchFoods,
   createCustomFood,

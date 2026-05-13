@@ -18,7 +18,7 @@ export const CONFIG = {
   GOOGLE_CLIENT_ID: '',
 
   // USDA FoodData Central API key (optional)
-  // DEMO_KEY allows 1,000 requests/hour and 10,000/day — sufficient for personal use.
-  // Register a free key at: https://api.data.gov/signup/
+  // You can also enter this in BiteWise under Settings -> USDA API key.
+  // Register a free key at: https://fdc.nal.usda.gov/api-key-signup/
   USDA_API_KEY: 'DEMO_KEY'
 };
