@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="description" content="BiteWise — smart food and water tracking. Your data stays on your device." />
+  <meta name="theme-color" content="#1a2e1a" />
+
+  <!-- PWA Meta -->
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="apple-mobile-web-app-title" content="BiteWise" />
+
+  <!-- Open Graph -->
+  <meta property="og:title" content="BiteWise" />
+  <meta property="og:description" content="Smart food and water tracking. Your data stays on your device." />
+  <meta property="og:type" content="website" />
+
+  <title>BiteWise</title>
+
+  <link rel="manifest" href="manifest.json" />
+  <link rel="stylesheet" href="css/app.css" />
+
+  <!-- Preconnect for Google Fonts (loaded in CSS) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+
+  <style>
+    /* Inline critical loading state — shown before JS initializes */
+    #app-loading {
+      position: fixed;
+      inset: 0;
+      background: #1a2e1a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 99999;
+      transition: opacity 0.4s ease;
+    }
+
+    #app-loading.hidden {
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .loading-logo {
+      font-family: Georgia, serif;
+      font-size: 2.8rem;
+      font-weight: 700;
+      color: white;
+      letter-spacing: -0.04em;
+    }
+
+    .loading-logo span { color: #f0893a; }
+
+    .loading-dot-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 28px;
+    }
+
+    .loading-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.3);
+      animation: pulse 1.2s ease-in-out infinite;
+    }
+
+    .loading-dot:nth-child(2) { animation-delay: 0.2s; }
+    .loading-dot:nth-child(3) { animation-delay: 0.4s; }
+
+    @keyframes pulse {
+      0%, 100% { transform: scale(0.8); opacity: 0.3; }
+      50%       { transform: scale(1.1); opacity: 1; }
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Loading splash (removed once JS is ready) -->
+  <div id="app-loading" aria-hidden="true">
+    <div class="loading-logo">Bite<span>Wise</span></div>
+    <div class="loading-dot-row">
+      <div class="loading-dot"></div>
+      <div class="loading-dot"></div>
+      <div class="loading-dot"></div>
+    </div>
+  </div>
+
+  <!-- App root -->
+  <div id="app"></div>
+
+  <!-- Module entry point -->
+  <script type="module" src="js/app.js"></script>
+
+  <script>
+    // Hide loading screen once the app module fires DOMContentLoaded
+    // We do this here so it covers both fast and slow loads gracefully
+    document.addEventListener('DOMContentLoaded', () => {
+      // Short delay lets the first render paint before removing the splash
+      setTimeout(() => {
+        const loader = document.getElementById('app-loading');
+        if (loader) {
+          loader.classList.add('hidden');
+          setTimeout(() => loader.remove(), 450);
+        }
+      }, 300);
+    });
+  </script>
+
+</body>
+</html>
