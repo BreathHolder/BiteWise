@@ -11,6 +11,54 @@ const LogScreen = {
   waterUnit: 'oz',
   searchTimeout: null,
 
+  getServingGrams(food, qty, unit) {
+    const amount = parseFloat(qty);
+    if (!amount || amount <= 0) return null;
+
+    const normalizedUnit = (unit || '').trim().toLowerCase();
+
+    if (normalizedUnit === 'g' || normalizedUnit === 'gram' || normalizedUnit === 'grams') {
+      return amount;
+    }
+
+    if (normalizedUnit === 'oz' || normalizedUnit === 'ounce' || normalizedUnit === 'ounces') {
+      return amount * 28.349523125;
+    }
+
+    const portion = (food.portions || []).find(p => {
+      const portionUnit = (p.unit || '').trim().toLowerCase();
+      return portionUnit === normalizedUnit && p.gram_weight;
+    });
+
+    if (portion) {
+      const portionAmount = parseFloat(portion.amount) || 1;
+      return amount * (portion.gram_weight / portionAmount);
+    }
+
+    return null;
+  },
+
+  getBaseServingGrams(food) {
+    const baseSize = parseFloat(food.serving_size) || 1;
+    const baseUnit = food.serving_unit || 'g';
+    return this.getServingGrams(food, baseSize, baseUnit) || baseSize;
+  },
+
+  scaleFoodNutrition(food, qty, unit) {
+    const targetGrams = this.getServingGrams(food, qty, unit);
+    const baseGrams = this.getBaseServingGrams(food);
+    const factor = targetGrams && baseGrams
+      ? targetGrams / baseGrams
+      : parseFloat(qty) / food.serving_size;
+    const nutrition = {};
+
+    for (const [k, v] of Object.entries(food.nutrition)) {
+      nutrition[k] = v !== null ? Math.round(v * factor * 10) / 10 : null;
+    }
+
+    return nutrition;
+  },
+
   async render(container) {
     this.date = todayString();
     const profile = await Profile.get();
@@ -294,7 +342,21 @@ const LogScreen = {
     resultsDiv.querySelectorAll('.food-result-item').forEach(item => {
       item.addEventListener('click', async () => {
         const food = foods.find(f => f.id === item.dataset.foodId);
-        if (food) this.renderPortionSelector(food, slot, pageContainer);
+        if (!food) return;
+
+        if (food.source === 'usda' && food.fdc_id) {
+          try {
+            item.style.opacity = '0.6';
+            const detailedFood = await getFoodDetail(food.fdc_id);
+            this.renderPortionSelector(detailedFood, slot, pageContainer);
+          } catch (err) {
+            showToast('Could not load serving details', 'error');
+            item.style.opacity = '';
+          }
+          return;
+        }
+
+        this.renderPortionSelector(food, slot, pageContainer);
       });
     });
   },
@@ -348,14 +410,13 @@ const LogScreen = {
 
     // Update nutrition preview on serving change
     const qtyInput = document.getElementById('serving-qty');
-    qtyInput.addEventListener('input', () => {
-      const factor = parseFloat(qtyInput.value) / food.serving_size || 1;
-      const scaled = {};
-      for (const [k, v] of Object.entries(food.nutrition)) {
-        scaled[k] = v !== null ? Math.round(v * factor * 10) / 10 : null;
-      }
+    const unitInput = document.getElementById('serving-unit');
+    const updatePreview = () => {
+      const scaled = this.scaleFoodNutrition(food, qtyInput.value, unitInput.value);
       document.getElementById('nutrition-preview').innerHTML = this.renderNutritionPreview(scaled, 1);
-    });
+    };
+    qtyInput.addEventListener('input', updatePreview);
+    unitInput.addEventListener('change', updatePreview);
 
     document.getElementById('btn-back-search').addEventListener('click', () => {
       this.renderModalSearch(slot, pageContainer);
@@ -445,12 +506,7 @@ const LogScreen = {
       return;
     }
 
-    // Scale nutrition
-    const factor = qty / food.serving_size;
-    const nutrition = {};
-    for (const [k, v] of Object.entries(food.nutrition)) {
-      nutrition[k] = v !== null ? Math.round(v * factor * 10) / 10 : null;
-    }
+    const nutrition = this.scaleFoodNutrition(food, qty, unit);
 
     const entry = {
       date: this.date,
