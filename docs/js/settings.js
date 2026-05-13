@@ -119,9 +119,19 @@ const SettingsScreen = {
               <div class="settings-row-icon">🌿</div>
               <div>
                 <div class="settings-row-label">BiteWise</div>
-                <div class="settings-row-sub">Version 1.0.0 · GPL-3.0</div>
+                <div class="settings-row-sub">Version 1.1.2 · GPL-3.0</div>
               </div>
             </div>
+          </div>
+          <div class="settings-row" id="btn-whats-new">
+            <div class="settings-row-left">
+              <div class="settings-row-icon">✨</div>
+              <div>
+                <div class="settings-row-label">What's New?</div>
+                <div class="settings-row-sub">Recent improvements and fixes</div>
+              </div>
+            </div>
+            <div class="settings-row-arrow">›</div>
           </div>
           <div class="settings-row" id="btn-privacy">
             <div class="settings-row-left">
@@ -179,6 +189,10 @@ const SettingsScreen = {
       this.renderManageCloud(container);
     });
 
+    document.getElementById('btn-whats-new').addEventListener('click', () => {
+      this.renderWhatsNew();
+    });
+
     document.getElementById('btn-privacy').addEventListener('click', () => {
       this.openModal('Privacy');
       document.getElementById('settings-modal-body').innerHTML = `
@@ -202,6 +216,44 @@ const SettingsScreen = {
   openModal(title) {
     document.getElementById('settings-modal-title').textContent = title;
     document.getElementById('settings-modal').classList.add('open');
+  },
+
+  renderWhatsNew() {
+    this.openModal("What's New?");
+    document.getElementById('settings-modal-body').innerHTML = `
+      <div class="whats-new-list">
+        <div class="whats-new-item">
+          <div class="whats-new-title">Saved foods</div>
+          <div class="whats-new-copy">
+            Star foods from search results or serving details to save them locally and reduce repeat USDA lookups.
+          </div>
+        </div>
+        <div class="whats-new-item">
+          <div class="whats-new-title">More accurate packaged-food servings</div>
+          <div class="whats-new-copy">
+            USDA branded food data is normalized from per-100g values to the label serving size, including household portions like cups.
+          </div>
+        </div>
+        <div class="whats-new-item">
+          <div class="whats-new-title">Improved serving unit math</div>
+          <div class="whats-new-copy">
+            Ounces, fluid ounces, grams, and known portions now update calorie and macro previews before logging.
+          </div>
+        </div>
+        <div class="whats-new-item">
+          <div class="whats-new-title">Birthday entry cleanup</div>
+          <div class="whats-new-copy">
+            Date of birth now uses separate month, day, and year fields in onboarding and profile settings.
+          </div>
+        </div>
+        <div class="whats-new-item">
+          <div class="whats-new-title">Better local cache handling</div>
+          <div class="whats-new-copy">
+            Older cached USDA foods are migrated to the current nutrition format when they appear in search or saved foods.
+          </div>
+        </div>
+      </div>
+    `;
   },
 
   renderEditProfile(profile, container) {
