@@ -4,7 +4,6 @@
 // Rate limits apply: be conservative with requests and cache results locally.
 
 import { Foods, SyncMeta } from './db.js';
-import { CONFIG } from './config.js';
 
 const USDA_BASE = 'https://api.nal.usda.gov/fdc/v1';
 const USDA_SCHEMA_VERSION = 2;
@@ -12,7 +11,7 @@ const USDA_API_KEY_META = 'usda_api_key';
 
 async function getUSDAApiKey() {
   const saved = await SyncMeta.get(USDA_API_KEY_META);
-  return saved?.value || CONFIG?.USDA_API_KEY || 'DEMO_KEY';
+  return saved?.value || 'DEMO_KEY';
 }
 
 async function getUSDAApiKeyStatus() {
