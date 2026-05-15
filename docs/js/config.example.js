@@ -8,12 +8,14 @@ export const CONFIG = {
   // Microsoft Azure App Registration client ID
   // Register at: https://portal.azure.com → Azure Active Directory → App registrations
   // Supported account types: Personal Microsoft accounts only
-  // Redirect URI (Single-page application): https://breathholder.github.io/BiteWise/
+  // Redirect URI (Single-page application): your deployed BiteWise URL
+  // Example: https://breathholder.github.io/BiteWise/
   MICROSOFT_CLIENT_ID: '',
 
   // Google OAuth 2.0 Client ID
   // Register at: https://console.cloud.google.com → APIs & Services → Credentials
-  // Authorized redirect URI: https://breathholder.github.io/BiteWise/
+  // Authorized redirect URI: your deployed BiteWise URL
+  // Example: https://breathholder.github.io/BiteWise/
   // Required API: Google Drive API (enable under APIs & Services → Library)
   GOOGLE_CLIENT_ID: '',
 

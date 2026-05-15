@@ -6,8 +6,8 @@ Smart food and water tracking. Your data stays on your device.
 
 BiteWise is a progressive web app (PWA) for tracking daily meals and water intake.
 Food nutrition data is pulled from the USDA FoodData Central database.
-All data is stored locally using IndexedDB. Backups go directly to your personal
-browser profile. Cloud backup is temporarily disabled until the OAuth flow is fixed.
+All data is stored locally using IndexedDB. Optional cloud backups go directly to
+your Google Drive or OneDrive app storage after you connect a provider.
 
 ## Features
 
@@ -38,7 +38,25 @@ For higher limits, register a free key at [api.data.gov/signup](https://api.data
 and enter it in Settings -> USDA API key, or copy `docs/js/config.example.js` to
 `docs/js/config.js` and set `USDA_API_KEY`.
 
-### 3. Bundled food tables
+### 3. Cloud backup setup (optional)
+
+To enable Settings -> Backup & restore, copy `docs/js/config.example.js` to
+`docs/js/config.js` and set one or both OAuth client IDs:
+
+```js
+MICROSOFT_CLIENT_ID: '...',
+GOOGLE_CLIENT_ID: '...'
+```
+
+For Microsoft, create an Azure app registration for personal Microsoft accounts
+and add your deployed BiteWise URL as a single-page application redirect URI.
+For Google, create an OAuth web client, enable the Google Drive API, and add the
+same deployed BiteWise URL as an authorized redirect URI.
+
+Backups are stored as `bitewise-backup.json`. OneDrive stores it in the app root
+folder, and Google Drive stores it in the hidden `appDataFolder`.
+
+### 4. Bundled food tables
 
 BiteWise can search static nutrition tables stored in `docs/data/`. The Wendy's
 core menu is included as the first bundled source at:
@@ -78,7 +96,7 @@ To add another bundled source:
 Bundled foods are merged into Log search results before the configurable backend
 endpoint and USDA results.
 
-### 4. Backend food tables (optional)
+### 5. Backend food tables (optional)
 
 In Settings -> Backend food tables, enter a search endpoint for your own restaurant
 or home menu data. BiteWise calls it with `q`, `page`, and `pageSize` query params.
@@ -111,7 +129,7 @@ either at the top level or inside `nutrition`:
 }
 ```
 
-### 5. Deploy to GitHub Pages
+### 6. Deploy to GitHub Pages
 
 The repo is configured to serve from the `/docs` folder on the `main` branch.
 Push your changes:
@@ -139,8 +157,8 @@ docs/
 └── js/
     ├── app.js          # Router + bootstrap
     ├── db.js           # IndexedDB wrapper
-    ├── auth.js         # Disabled OAuth implementation kept for later
-    ├── sync.js         # Disabled cloud sync implementation kept for later
+    ├── auth.js         # OAuth connection helpers for cloud backup
+    ├── sync.js         # OneDrive and Google Drive backup/restore
     ├── onboarding.js   # First-run flow
     ├── food.js         # USDA/backend API + food utilities
     ├── log.js          # Meal/water logging screen

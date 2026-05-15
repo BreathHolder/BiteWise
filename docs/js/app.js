@@ -5,6 +5,7 @@ import { Onboarding } from './onboarding.js';
 import { LogScreen } from './log.js';
 import { DashboardScreen } from './dashboard.js';
 import { SettingsScreen } from './settings.js';
+import { Auth } from './auth.js';
 
 // ─── Toast System ─────────────────────────────────────────────────────────────
 
@@ -57,6 +58,7 @@ const App = {
   async init() {
     // Ensure DB is open before anything else
     await openDB();
+    const authResult = await Auth.handleRedirectIfPresent();
 
     // Check if user has completed onboarding
     const profileExists = await Profile.exists();
@@ -67,6 +69,12 @@ const App = {
     } else {
       // Existing user: show main app
       this.renderApp();
+    }
+
+    if (authResult?.success) {
+      showToast(`${authResult.provider === 'microsoft' ? 'OneDrive' : 'Google Drive'} connected`, 'success');
+    } else if (authResult?.error) {
+      showToast(authResult.error, 'error', 6000);
     }
   },
 

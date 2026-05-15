@@ -7,26 +7,64 @@
 // Each user of this app registers their own OAuth apps — see README.md for instructions.
 
 import { SyncMeta } from './db.js';
-import { CONFIG } from './config.js';
 
 // ─── OAuth App Configuration ──────────────────────────────────────────────────
 
-const REDIRECT_URI = 'https://breathholder.github.io/BiteWise/';
+const DEFAULT_CONFIG = {
+  MICROSOFT_CLIENT_ID: '',
+  GOOGLE_CLIENT_ID: ''
+};
+let configPromise = null;
+
+async function getConfig() {
+  if (!configPromise) {
+    configPromise = import('./config.js')
+      .then(module => ({ ...DEFAULT_CONFIG, ...(module.CONFIG || {}) }))
+      .catch(() => DEFAULT_CONFIG);
+  }
+  return configPromise;
+}
+
+function getRedirectUri() {
+  return `${window.location.origin}${window.location.pathname}`;
+}
+
+async function getMicrosoftConfig() {
+  const config = await getConfig();
+  return {
+    client_id: config.MICROSOFT_CLIENT_ID,
+    authority: 'https://login.microsoftonline.com/consumers',
+    scopes: ['Files.ReadWrite', 'User.Read', 'offline_access'],
+    redirect_uri: getRedirectUri()
+  };
+}
+
+async function getGoogleConfig() {
+  const config = await getConfig();
+  return {
+    client_id: config.GOOGLE_CLIENT_ID,
+    scopes: [
+      'https://www.googleapis.com/auth/drive.appdata',
+      'https://www.googleapis.com/auth/userinfo.profile'
+    ],
+    redirect_uri: getRedirectUri()
+  };
+}
 
 const MICROSOFT_CONFIG = {
-  client_id: CONFIG.MICROSOFT_CLIENT_ID,
+  client_id: '',
   authority: 'https://login.microsoftonline.com/consumers',
   scopes: ['Files.ReadWrite', 'User.Read', 'offline_access'],
-  redirect_uri: REDIRECT_URI
+  redirect_uri: ''
 };
 
 const GOOGLE_CONFIG = {
-  client_id: CONFIG.GOOGLE_CLIENT_ID,
+  client_id: '',
   scopes: [
     'https://www.googleapis.com/auth/drive.appdata',
     'https://www.googleapis.com/auth/userinfo.profile'
   ],
-  redirect_uri: REDIRECT_URI
+  redirect_uri: ''
 };
 
 // ─── Token Storage Keys ────────────────────────────────────────────────────────
@@ -79,7 +117,8 @@ const Microsoft = {
    * Saves the verifier and state to sessionStorage, then redirects to Microsoft.
    */
   async startLogin() {
-    if (!CONFIG.MICROSOFT_CLIENT_ID) {
+    const config = await getMicrosoftConfig();
+    if (!config.client_id) {
       throw new Error('Microsoft client ID is not configured. Copy config.example.js to config.js and add your client ID.');
     }
     const verifier = generateCodeVerifier();
@@ -91,17 +130,17 @@ const Microsoft = {
     sessionStorage.setItem('oauth_provider', 'microsoft');
 
     const params = new URLSearchParams({
-      client_id: MICROSOFT_CONFIG.client_id,
+      client_id: config.client_id,
       response_type: 'code',
-      redirect_uri: MICROSOFT_CONFIG.redirect_uri,
-      scope: MICROSOFT_CONFIG.scopes.join(' '),
+      redirect_uri: config.redirect_uri,
+      scope: config.scopes.join(' '),
       state,
       code_challenge: challenge,
       code_challenge_method: 'S256',
       response_mode: 'query'
     });
 
-    window.location.href = `${MICROSOFT_CONFIG.authority}/oauth2/v2.0/authorize?${params}`;
+    window.location.href = `${config.authority}/oauth2/v2.0/authorize?${params}`;
   },
 
   /**
@@ -109,20 +148,21 @@ const Microsoft = {
    * Microsoft's token endpoint supports CORS from browsers.
    */
   async handleCallback(code, state) {
+    const config = await getMicrosoftConfig();
     const savedState = sessionStorage.getItem('oauth_state');
     const verifier = sessionStorage.getItem('pkce_verifier');
 
     if (state !== savedState) throw new Error('OAuth state mismatch. Possible CSRF.');
 
     const body = new URLSearchParams({
-      client_id: MICROSOFT_CONFIG.client_id,
+      client_id: config.client_id,
       grant_type: 'authorization_code',
       code,
-      redirect_uri: MICROSOFT_CONFIG.redirect_uri,
+      redirect_uri: config.redirect_uri,
       code_verifier: verifier
     });
 
-    const response = await fetch(`${MICROSOFT_CONFIG.authority}/oauth2/v2.0/token`, {
+    const response = await fetch(`${config.authority}/oauth2/v2.0/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body
@@ -166,14 +206,15 @@ const Microsoft = {
   },
 
   async refreshToken(refreshToken) {
+    const config = await getMicrosoftConfig();
     const body = new URLSearchParams({
-      client_id: MICROSOFT_CONFIG.client_id,
+      client_id: config.client_id,
       grant_type: 'refresh_token',
       refresh_token: refreshToken,
-      scope: MICROSOFT_CONFIG.scopes.join(' ')
+      scope: config.scopes.join(' ')
     });
 
-    const response = await fetch(`${MICROSOFT_CONFIG.authority}/oauth2/v2.0/token`, {
+    const response = await fetch(`${config.authority}/oauth2/v2.0/token`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body
@@ -201,26 +242,22 @@ const Microsoft = {
 
 const Google = {
   async startLogin() {
-    if (!CONFIG.GOOGLE_CLIENT_ID) {
+    const config = await getGoogleConfig();
+    if (!config.client_id) {
       throw new Error('Google client ID is not configured. Copy config.example.js to config.js and add your client ID.');
     }
-    const verifier = generateCodeVerifier();
-    const challenge = await generateCodeChallenge(verifier);
     const state = generateState();
 
-    sessionStorage.setItem('pkce_verifier', verifier);
     sessionStorage.setItem('oauth_state', state);
     sessionStorage.setItem('oauth_provider', 'google');
 
     const params = new URLSearchParams({
-      client_id: GOOGLE_CONFIG.client_id,
-      response_type: 'code',
-      redirect_uri: GOOGLE_CONFIG.redirect_uri,
-      scope: GOOGLE_CONFIG.scopes.join(' '),
+      client_id: config.client_id,
+      response_type: 'token',
+      redirect_uri: config.redirect_uri,
+      scope: config.scopes.join(' '),
       state,
-      code_challenge: challenge,
-      code_challenge_method: 'S256',
-      access_type: 'offline',
+      include_granted_scopes: 'true',
       prompt: 'consent'
     });
 
@@ -228,6 +265,7 @@ const Google = {
   },
 
   async handleCallback(code, state) {
+    const config = await getGoogleConfig();
     const savedState = sessionStorage.getItem('oauth_state');
     const verifier = sessionStorage.getItem('pkce_verifier');
 
@@ -242,10 +280,10 @@ const Google = {
     // For now we implement the direct attempt and surface a clear error if it fails.
 
     const body = new URLSearchParams({
-      client_id: GOOGLE_CONFIG.client_id,
+      client_id: config.client_id,
       grant_type: 'authorization_code',
       code,
-      redirect_uri: GOOGLE_CONFIG.redirect_uri,
+      redirect_uri: config.redirect_uri,
       code_verifier: verifier
     });
 
@@ -293,8 +331,9 @@ const Google = {
   },
 
   async refreshToken(refreshToken) {
+    const config = await getGoogleConfig();
     const body = new URLSearchParams({
-      client_id: GOOGLE_CONFIG.client_id,
+      client_id: config.client_id,
       grant_type: 'refresh_token',
       refresh_token: refreshToken
     });
@@ -343,11 +382,13 @@ const Auth = {
    */
   async handleRedirectIfPresent() {
     const params = new URLSearchParams(window.location.search);
+    const hashParams = new URLSearchParams(window.location.hash.replace(/^#/, ''));
     const code = params.get('code');
     const state = params.get('state');
-    const error = params.get('error');
+    const error = params.get('error') || hashParams.get('error');
+    const accessToken = hashParams.get('access_token');
 
-    if (!code && !error) return null;
+    if (!code && !accessToken && !error) return null;
 
     // Clean the URL immediately to avoid re-processing
     window.history.replaceState({}, document.title, window.location.pathname);
@@ -359,6 +400,20 @@ const Auth = {
     const provider = sessionStorage.getItem('oauth_provider');
 
     try {
+      if (provider === 'google' && accessToken) {
+        const hashState = hashParams.get('state');
+        const savedState = sessionStorage.getItem('oauth_state');
+        if (hashState !== savedState) throw new Error('OAuth state mismatch. Possible CSRF.');
+        await Google.saveTokens({
+          access_token: accessToken,
+          expires_in: Number(hashParams.get('expires_in') || 3600)
+        });
+        sessionStorage.removeItem('oauth_state');
+        sessionStorage.removeItem('oauth_provider');
+        await SyncMeta.set(KEYS.PROVIDER, { value: 'google' });
+        return { provider: 'google', success: true };
+      }
+
       if (provider === 'microsoft') {
         await Microsoft.handleCallback(code, state);
         return { provider: 'microsoft', success: true };

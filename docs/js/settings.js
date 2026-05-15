@@ -13,6 +13,8 @@ import {
 } from './food.js';
 import { showToast } from './app.js';
 import { APP_VERSION } from './version.js';
+import { Auth } from './auth.js';
+import { Sync } from './sync.js';
 
 const monthOptions = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -136,8 +138,8 @@ const SettingsScreen = {
             <div class="settings-row-left">
               <div class="settings-row-icon">💾</div>
               <div>
-                <div class="settings-row-label">Storage</div>
-                <div class="settings-row-sub">Stored locally on this device</div>
+                <div class="settings-row-label">Backup & restore</div>
+                <div class="settings-row-sub">Save data to Google Drive or OneDrive</div>
               </div>
             </div>
             <div class="settings-row-arrow">›</div>
@@ -240,9 +242,8 @@ const SettingsScreen = {
           No data is transmitted to any server run by this application.
         </p>
         <p style="font-size:0.92rem;line-height:1.7;color:var(--text-mid);margin-top:12px;">
-          Cloud backup and restore are temporarily disabled while the OAuth flow is
-          being reworked. Until then, your profile, logs, foods, recipes, and targets
-          remain local to this browser profile.
+          Backup and restore can write a single BiteWise JSON file to your chosen
+          Google Drive or OneDrive app storage after you connect that provider.
         </p>
         <p style="font-size:0.92rem;line-height:1.7;color:var(--text-mid);margin-top:12px;">
           This application is open source (GPL-3.0) and hosted on GitHub Pages.
@@ -610,19 +611,107 @@ const SettingsScreen = {
     });
   },
 
-  renderManageCloud(container) {
-    this.openModal('Local Storage');
+  async renderManageCloud(container) {
+    this.openModal('Backup & Restore');
     const body = document.getElementById('settings-modal-body');
+    const [provider, lastSync] = await Promise.all([
+      Auth.getProvider(),
+      Sync.getLastSyncDisplay()
+    ]);
+    const providerLabel = provider === 'microsoft'
+      ? 'OneDrive'
+      : provider === 'google'
+        ? 'Google Drive'
+        : 'Not connected';
 
     body.innerHTML = `
       <p style="font-size:0.88rem;color:var(--text-muted);margin-bottom:20px;line-height:1.5;">
-        BiteWise is currently running in local-only mode. Your data is stored in
-        this browser's IndexedDB database and no OAuth sign-in is required.
+        Back up your BiteWise profile, food log, water log, saved foods, recipes,
+        and targets as one JSON file in your cloud drive app storage.
       </p>
-      <p style="font-size:0.88rem;color:var(--text-muted);line-height:1.5;">
-        Cloud backup and restore will return after OAuth support is fixed.
+      <div class="card" style="background:var(--cream-50);margin-bottom:16px;">
+        <div class="card-padded">
+          <div style="display:flex;justify-content:space-between;gap:12px;font-size:0.86rem;margin-bottom:6px;">
+            <span style="color:var(--text-muted);">Provider</span>
+            <span style="font-weight:600;color:var(--text-dark);">${providerLabel}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;gap:12px;font-size:0.86rem;">
+            <span style="color:var(--text-muted);">Last backup/restore</span>
+            <span style="font-weight:600;color:var(--text-dark);text-align:right;">${lastSync}</span>
+          </div>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+        <button class="btn btn-secondary" id="btn-connect-onedrive">OneDrive</button>
+        <button class="btn btn-secondary" id="btn-connect-google">Google Drive</button>
+      </div>
+      <button class="btn btn-primary btn-full" id="btn-cloud-backup" ${provider ? '' : 'disabled'}>
+        Back up now
+      </button>
+      <button class="btn btn-secondary btn-full" id="btn-cloud-restore" style="margin-top:8px;" ${provider ? '' : 'disabled'}>
+        Restore from cloud
+      </button>
+      ${provider ? `<button class="btn btn-ghost btn-full" id="btn-cloud-disconnect" style="margin-top:8px;color:var(--orange-500);">Disconnect cloud provider</button>` : ''}
+      <p style="font-size:0.78rem;color:var(--text-light);margin-top:14px;line-height:1.5;">
+        Restoring replaces local BiteWise data on this device. OAuth tokens are not included in backups.
       </p>
     `;
+
+    document.getElementById('btn-connect-onedrive').addEventListener('click', async () => {
+      try {
+        await Auth.Microsoft.startLogin();
+      } catch (err) {
+        showToast(err.message, 'error', 6000);
+      }
+    });
+
+    document.getElementById('btn-connect-google').addEventListener('click', async () => {
+      try {
+        await Auth.Google.startLogin();
+      } catch (err) {
+        showToast(err.message, 'error', 6000);
+      }
+    });
+
+    document.getElementById('btn-cloud-backup')?.addEventListener('click', async () => {
+      const button = document.getElementById('btn-cloud-backup');
+      button.disabled = true;
+      button.textContent = 'Backing up...';
+      try {
+        await Sync.backup();
+        showToast('Backup saved', 'success');
+        await this.renderManageCloud(container);
+      } catch (err) {
+        showToast(err.message || 'Backup failed', 'error', 6000);
+        button.disabled = false;
+        button.textContent = 'Back up now';
+      }
+    });
+
+    document.getElementById('btn-cloud-restore')?.addEventListener('click', async () => {
+      const ok = window.confirm('Restore will replace local BiteWise data on this device. Continue?');
+      if (!ok) return;
+
+      const button = document.getElementById('btn-cloud-restore');
+      button.disabled = true;
+      button.textContent = 'Restoring...';
+      try {
+        const result = await Sync.restore();
+        showToast(result.hadData ? 'Restore complete' : 'No cloud backup found', result.hadData ? 'success' : 'info');
+        document.getElementById('settings-modal').classList.remove('open');
+        await this.render(container);
+      } catch (err) {
+        showToast(err.message || 'Restore failed', 'error', 6000);
+        button.disabled = false;
+        button.textContent = 'Restore from cloud';
+      }
+    });
+
+    document.getElementById('btn-cloud-disconnect')?.addEventListener('click', async () => {
+      await Auth.disconnectAll();
+      showToast('Cloud provider disconnected', 'info');
+      await this.renderManageCloud(container);
+    });
   }
 };
 
