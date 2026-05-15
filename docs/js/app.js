@@ -168,7 +168,8 @@ async function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
     try {
       const reg = await navigator.serviceWorker.register('/BiteWise/sw.js', {
-        scope: '/BiteWise/'
+        scope: '/BiteWise/',
+        type: 'module'
       });
       console.log('Service worker registered:', reg.scope);
     } catch (err) {

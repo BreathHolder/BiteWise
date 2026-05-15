@@ -217,6 +217,58 @@ ul, ol { list-style: none; }
   margin-top: 2px;
 }
 
+.log-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.log-date-control {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex: 0 0 138px;
+}
+
+.log-date-control span {
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.log-date-control input {
+  width: 100%;
+  min-height: 36px;
+  padding: 7px 8px;
+  border: 1.5px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-1);
+  color: var(--text-dark);
+  font-size: 0.86rem;
+}
+
+.log-date-control input:focus {
+  outline: none;
+  border-color: var(--green-500);
+  box-shadow: 0 0 0 3px rgba(61, 107, 61, 0.12);
+}
+
+@media (max-width: 380px) {
+  .log-header-row {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .log-date-control {
+    width: 100%;
+    flex-basis: auto;
+  }
+}
+
 /* ─── Typography ─────────────────────────────────────────────────────────────── */
 .display-lg {
   font-family: var(--font-display);
@@ -705,6 +757,51 @@ ul, ol { list-style: none; }
   color: var(--green-700);
 }
 
+.water-custom-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 42px 42px;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.water-custom-control .form-input {
+  min-height: 42px;
+  padding: 9px 12px;
+  font-size: 0.9rem;
+}
+
+.water-custom-btn {
+  width: 42px;
+  height: 42px;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  line-height: 1;
+  transition: all 0.15s;
+}
+
+.water-custom-btn.add {
+  background: var(--green-100);
+  color: var(--green-700);
+}
+
+.water-custom-btn.add:hover {
+  background: var(--green-700);
+  color: white;
+}
+
+.water-custom-btn.remove {
+  background: var(--orange-100);
+  color: var(--orange-500);
+}
+
+.water-custom-btn.remove:hover {
+  background: var(--orange-500);
+  color: white;
+}
+
 /* ─── Onboarding Screens ─────────────────────────────────────────────────────── */
 .onboard-screen {
   min-height: 100dvh;
@@ -1166,9 +1263,14 @@ ul, ol { list-style: none; }
   letter-spacing: 0.04em;
   text-transform: uppercase;
   flex-shrink: 0;
+  max-width: 76px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .badge-usda   { background: var(--green-100); color: var(--green-700); }
+.badge-backend { background: var(--amber-300); color: var(--green-900); }
 .badge-custom { background: var(--orange-100); color: var(--orange-500); }
 
 .food-result-name {

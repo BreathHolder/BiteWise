@@ -1,4 +1,4 @@
-// log.js - Today's food and water log screen
+// log.js - Food and water log screen
 
 import { FoodLog, WaterLog, Targets, Profile, todayString } from './db.js';
 import {
@@ -27,6 +27,35 @@ const LogScreen = {
   searchHasMore: false,
   searchLoading: false,
   searchScrollHandler: null,
+
+  dateStringFromDate(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  },
+
+  getLogDateBounds() {
+    const max = todayString();
+    const minDate = new Date(`${max}T00:00:00`);
+    minDate.setDate(minDate.getDate() - 6);
+
+    return {
+      min: this.dateStringFromDate(minDate),
+      max
+    };
+  },
+
+  clampLogDate(dateStr) {
+    const { min, max } = this.getLogDateBounds();
+    if (!dateStr || dateStr > max) return max;
+    if (dateStr < min) return min;
+    return dateStr;
+  },
+
+  formatDateLabel(dateStr) {
+    const date = new Date(`${dateStr}T00:00:00`);
+    const label = date.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    if (dateStr === todayString()) return `${label} (Today)`;
+    return label;
+  },
 
   getServingGrams(food, qty, unit) {
     const amount = parseFloat(qty);
@@ -103,10 +132,11 @@ const LogScreen = {
     }
   },
 
-  async render(container) {
-    this.date = todayString();
+  async render(container, selectedDate = this.date || todayString()) {
+    this.date = this.clampLogDate(selectedDate);
     const profile = await Profile.get();
     this.waterUnit = profile?.water_unit || 'oz';
+    const dateBounds = this.getLogDateBounds();
 
     const [entries, waterEntries, targets] = await Promise.all([
       FoodLog.getByDate(this.date),
@@ -114,23 +144,37 @@ const LogScreen = {
       Targets.getActive()
     ]);
 
-    const today = new Date();
-    const dateLabel = today.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+    const isToday = this.date === todayString();
+    const dateLabel = this.formatDateLabel(this.date);
     const totals = sumNutrition(entries);
     const waterTotal = waterEntries.reduce((s, e) => s + (e.unit === this.waterUnit ? e.amount : 0), 0);
     const waterTarget = targets?.water || null;
 
     container.innerHTML = `
       <div class="page-header">
-        <h1>Today's Log</h1>
-        <div class="date-label">${dateLabel}</div>
+        <div class="log-header-row">
+          <div>
+            <h1>Log</h1>
+            <div class="date-label">${dateLabel}</div>
+          </div>
+          <label class="log-date-control">
+            <span>Date</span>
+            <input
+              type="date"
+              id="log-date-input"
+              value="${this.date}"
+              min="${dateBounds.min}"
+              max="${dateBounds.max}"
+            />
+          </label>
+        </div>
       </div>
 
       <div class="page-content" id="log-scroll">
         <!-- Daily Summary Card -->
         <div style="padding:16px 16px 0;">
           <div class="card summary-card fade-up">
-            <div class="summary-card-label">Calories today</div>
+            <div class="summary-card-label">Calories ${isToday ? 'today' : 'logged'}</div>
             <div class="summary-card-value">${Math.round(totals.calories)}</div>
             <div class="summary-card-sub">
               ${targets?.calories ? `of ${targets.calories} kcal goal` : 'No calorie target set'}
@@ -166,6 +210,20 @@ const LogScreen = {
                    <button class="water-add-btn" data-amount="500">+ 500 ml</button>
                    <button class="water-add-btn" data-amount="750">+ 750 ml</button>`
               }
+            </div>
+            <div class="water-custom-control">
+              <input
+                class="form-input"
+                type="number"
+                id="custom-water-amount"
+                min="0"
+                step="${this.waterUnit === 'oz' ? '1' : '10'}"
+                placeholder="Custom ${this.waterUnit}"
+                inputmode="decimal"
+                aria-label="Custom water amount in ${this.waterUnit}"
+              />
+              <button class="water-custom-btn add" data-water-action="add" type="button" aria-label="Add custom water amount">+</button>
+              <button class="water-custom-btn remove" data-water-action="remove" type="button" aria-label="Remove custom water amount">-</button>
             </div>
           </div>
         </div>
@@ -245,17 +303,24 @@ const LogScreen = {
   },
 
   bindEvents(container) {
+    const dateInput = document.getElementById('log-date-input');
+    dateInput?.addEventListener('change', async () => {
+      await this.render(container, dateInput.value);
+    });
+
     // Water logging
     container.querySelectorAll('[data-amount]').forEach(btn => {
       btn.addEventListener('click', async () => {
         const amount = parseFloat(btn.dataset.amount);
-        await WaterLog.add({
-          date: this.date,
-          amount,
-          unit: this.waterUnit
-        });
-        showToast(`Added ${amount}${this.waterUnit} of water`, 'success');
-        await this.render(container);
+        await this.logWaterAmount(amount, container);
+      });
+    });
+
+    container.querySelectorAll('[data-water-action]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const input = document.getElementById('custom-water-amount');
+        const amount = parseFloat(input?.value);
+        await this.logWaterAmount(amount, container, btn.dataset.waterAction);
       });
     });
 
@@ -272,7 +337,7 @@ const LogScreen = {
         const id = parseInt(btn.dataset.delete);
         await FoodLog.delete(id);
         showToast('Entry removed', 'info');
-        await this.render(container);
+        await this.render(container, this.date);
       });
     });
 
@@ -284,6 +349,39 @@ const LogScreen = {
     document.getElementById('food-modal').addEventListener('click', (e) => {
       if (e.target === document.getElementById('food-modal')) this.closeModal();
     });
+  },
+
+  async logWaterAmount(amount, container, action = 'add') {
+    if (!amount || amount <= 0) {
+      showToast('Enter a valid water amount', 'error');
+      return;
+    }
+
+    const signedAmount = action === 'remove' ? -amount : amount;
+
+    if (signedAmount < 0) {
+      const waterEntries = await WaterLog.getByDate(this.date);
+      const waterTotal = waterEntries.reduce((sum, entry) => {
+        return sum + (entry.unit === this.waterUnit ? entry.amount : 0);
+      }, 0);
+
+      if (waterTotal + signedAmount < 0) {
+        showToast(`Only ${waterTotal}${this.waterUnit} logged for this day`, 'error');
+        return;
+      }
+    }
+
+    await WaterLog.add({
+      date: this.date,
+      amount: signedAmount,
+      unit: this.waterUnit
+    });
+
+    showToast(
+      `${action === 'remove' ? 'Removed' : 'Added'} ${amount}${this.waterUnit} of water`,
+      action === 'remove' ? 'info' : 'success'
+    );
+    await this.render(container, this.date);
   },
 
   // ─── Food Modal ─────────────────────────────────────────────────────────────
@@ -449,8 +547,8 @@ const LogScreen = {
               title="${food.favorite ? 'Unsave food' : 'Save food'}"
               type="button"
             >★</button>
-            <span class="food-result-badge ${food.source === 'usda' ? 'badge-usda' : 'badge-custom'}">
-              ${food.source === 'usda' ? 'USDA' : 'Custom'}
+            <span class="food-result-badge ${this.getFoodBadgeClass(food)}">
+              ${this.getFoodBadgeLabel(food)}
             </span>
             <div style="flex:1;min-width:0;">
               <div class="food-result-name">${food.name}</div>
@@ -464,6 +562,20 @@ const LogScreen = {
         `).join('')}
       </div>
     `;
+  },
+
+  getFoodBadgeClass(food) {
+    if (food.source === 'usda') return 'badge-usda';
+    if (food.source === 'bundled') return 'badge-backend';
+    if (food.source === 'backend') return 'badge-backend';
+    return 'badge-custom';
+  },
+
+  getFoodBadgeLabel(food) {
+    if (food.source === 'usda') return 'USDA';
+    if (food.source === 'bundled') return food.source_label || 'Menu';
+    if (food.source === 'backend') return food.source_label || 'Menu';
+    return 'Custom';
   },
 
   renderSearchResults(foods, slot, pageContainer, resultsDiv, hasMore = false) {
@@ -729,7 +841,7 @@ const LogScreen = {
       await FoodLog.add(entry);
       this.closeModal();
       showToast(`${food.name} logged!`, 'success');
-      await this.render(pageContainer);
+      await this.render(pageContainer, this.date);
     } catch (err) {
       errorEl.textContent = 'Failed to log food. Please try again.';
       errorEl.style.display = 'block';

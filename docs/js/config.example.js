@@ -20,5 +20,11 @@ export const CONFIG = {
   // USDA FoodData Central API key (optional)
   // You can also enter this in BiteWise under Settings -> USDA API key.
   // Register a free key at: https://fdc.nal.usda.gov/api-key-signup/
-  USDA_API_KEY: 'DEMO_KEY'
+  USDA_API_KEY: 'DEMO_KEY',
+
+  // Optional backend food table search endpoint.
+  // You can also enter this in BiteWise under Settings -> Backend food tables.
+  // BiteWise calls this URL with q, page, and pageSize query params.
+  // Expected response: an array, or { foods: [...] }, { results: [...] }, or { items: [...] }.
+  BACKEND_FOOD_SEARCH_URL: ''
 };

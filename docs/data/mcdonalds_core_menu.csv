@@ -1,0 +1,23 @@
+Menu Item,Energy (kcal),Fat (g),Saturated Fat (g),Carbohydrates (g),Sugars (g),Fibre (g),Protein (g),Salt/Sodium
+Big Mac,580,34,11.0,45,7,3,25,1060
+Cheeseburger,300,13,6.0,31,6,2,15,720
+Double Cheeseburger,440,24,11.0,34,6,2,25,1120
+Hamburger,250,9,3.5,30,5,1,12,510
+McDouble,390,20,9.0,32,6,2,22,920
+Quarter Pounder with Cheese,520,26,12.0,42,10,2,30,1140
+McChicken,390,21,3.5,38,4,1,14,560
+Filet-O-Fish,380,19,4.0,38,4,1,16,580
+McCrispy,470,20,5.0,46,9,1,26,1140
+Spicy McCrispy,530,26,4.0,48,9,2,27,1320
+"Chicken McNuggets, 4 Piece",170,10,1.5,10,0,0,9,340
+"Chicken McNuggets, 6 Piece",250,15,2.5,15,0,0,14,500
+"World Famous Fries, Small",230,11,1.5,31,0,3,3,190
+"World Famous Fries, Medium",320,15,2.0,43,0,4,5,260
+"World Famous Fries, Large",480,23,3.0,65,0,6,7,400
+Egg McMuffin,310,13,6.0,30,3,2,17,770
+Sausage McMuffin,400,26,10.0,29,2,2,14,760
+Hash Browns,140,8,1.0,18,0,2,2,310
+Baked Apple Pie,230,11,6.0,33,14,1,2,100
+"Chocolate Shake, Small",520,14,9.0,85,67,0,12,250
+"Coca-Cola, Small",200,0,0.0,53,53,0,0,50
+"Diet Coke, Small",0,0,0.0,0,0,0,0,50

@@ -1,18 +1,22 @@
 // BiteWise Service Worker
 // Provides offline capability and asset caching
 
-const CACHE_NAME = 'bitewise-v13';
+import { APP_VERSION } from './js/version.js';
+
+const CACHE_NAME = `bitewise-v${APP_VERSION}`;
 const STATIC_ASSETS = [
   '/BiteWise/',
   '/BiteWise/index.html',
   '/BiteWise/css/app.css',
   '/BiteWise/js/app.js',
+  '/BiteWise/js/version.js',
   '/BiteWise/js/db.js',
   '/BiteWise/js/onboarding.js',
   '/BiteWise/js/food.js',
   '/BiteWise/js/log.js',
   '/BiteWise/js/dashboard.js',
   '/BiteWise/js/settings.js',
+  '/BiteWise/data/wendys_core_menu.csv',
   '/BiteWise/manifest.json',
   'https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;0,9..144,700;1,9..144,400&family=DM+Sans:wght@300;400;500;600&display=swap'
 ];

@@ -8,10 +8,33 @@ import { Foods, SyncMeta } from './db.js';
 const USDA_BASE = 'https://api.nal.usda.gov/fdc/v1';
 const USDA_SCHEMA_VERSION = 2;
 const USDA_API_KEY_META = 'usda_api_key';
+const BACKEND_FOOD_SOURCE_META = 'backend_food_source_url';
+const BUNDLED_FOOD_SOURCES = [
+  {
+    id: 'wendys_core_menu',
+    label: "Wendy's",
+    brand: "Wendy's",
+    category: 'Core Menu',
+    url: 'data/wendys_core_menu.csv',
+    format: 'csv'
+  }
+];
+let configPromise = null;
+const bundledFoodCache = new Map();
+
+async function getOptionalConfig() {
+  if (!configPromise) {
+    configPromise = import('./config.js')
+      .then(module => module.CONFIG || {})
+      .catch(() => ({}));
+  }
+  return configPromise;
+}
 
 async function getUSDAApiKey() {
   const saved = await SyncMeta.get(USDA_API_KEY_META);
-  return saved?.value || 'DEMO_KEY';
+  const config = await getOptionalConfig();
+  return saved?.value || config.USDA_API_KEY || 'DEMO_KEY';
 }
 
 async function getUSDAApiKeyStatus() {
@@ -49,6 +72,63 @@ async function validateUSDAApiKey(apiKey) {
 
 async function clearUSDAApiKey() {
   await SyncMeta.remove(USDA_API_KEY_META);
+}
+
+async function getBackendFoodSourceUrl() {
+  const saved = await SyncMeta.get(BACKEND_FOOD_SOURCE_META);
+  const config = await getOptionalConfig();
+  return saved?.value || config.BACKEND_FOOD_SEARCH_URL || '';
+}
+
+async function getBackendFoodSourceStatus() {
+  const url = await getBackendFoodSourceUrl();
+  return {
+    enabled: !!url,
+    url
+  };
+}
+
+async function saveBackendFoodSourceUrl(url) {
+  const value = (url || '').trim();
+  if (!value) {
+    await clearBackendFoodSourceUrl();
+    return;
+  }
+
+  try {
+    new URL(value);
+  } catch (err) {
+    throw new Error('Enter a valid backend search URL.');
+  }
+
+  await SyncMeta.set(BACKEND_FOOD_SOURCE_META, { value });
+}
+
+async function clearBackendFoodSourceUrl() {
+  await SyncMeta.remove(BACKEND_FOOD_SOURCE_META);
+}
+
+async function validateBackendFoodSourceUrl(url) {
+  const value = (url || '').trim();
+  if (!value) return false;
+
+  try {
+    const testUrl = new URL(value);
+    testUrl.searchParams.set('q', 'apple');
+    testUrl.searchParams.set('page', 1);
+    testUrl.searchParams.set('pageSize', 1);
+
+    const response = await fetch(testUrl.toString());
+    if (!response.ok) return false;
+
+    const payload = await response.json();
+    return Array.isArray(payload) ||
+      Array.isArray(payload?.foods) ||
+      Array.isArray(payload?.results) ||
+      Array.isArray(payload?.items);
+  } catch (err) {
+    return false;
+  }
 }
 
 // Nutrient ID mappings from FoodData Central
@@ -96,6 +176,74 @@ function scaleNutritionValues(nutrition, factor) {
 function nutritionPerServing(nutrition, servingSize, servingUnit) {
   const servingGrams = gramWeightForServing(servingSize, servingUnit);
   return servingGrams ? scaleNutritionValues(nutrition, servingGrams / 100) : nutrition;
+}
+
+function numberOrNull(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function slugify(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'item';
+}
+
+function normalizeSearchText(value) {
+  return String(value || '').toLowerCase().replace(/[^a-z0-9]+/g, '');
+}
+
+function parseCSV(text) {
+  const rows = [];
+  let row = [];
+  let field = '';
+  let inQuotes = false;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+    const next = text[i + 1];
+
+    if (char === '"') {
+      if (inQuotes && next === '"') {
+        field += '"';
+        i += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === ',' && !inQuotes) {
+      row.push(field);
+      field = '';
+      continue;
+    }
+
+    if ((char === '\n' || char === '\r') && !inQuotes) {
+      if (char === '\r' && next === '\n') i += 1;
+      row.push(field);
+      if (row.some(cell => cell.trim() !== '')) rows.push(row);
+      row = [];
+      field = '';
+      continue;
+    }
+
+    field += char;
+  }
+
+  row.push(field);
+  if (row.some(cell => cell.trim() !== '')) rows.push(row);
+
+  const headers = rows.shift()?.map(header => header.trim()) || [];
+  return rows.map(cells => {
+    const record = {};
+    headers.forEach((header, index) => {
+      record[header] = (cells[index] || '').trim();
+    });
+    return record;
+  });
 }
 
 function parseAmount(value) {
@@ -197,6 +345,135 @@ async function getFoodDetail(fdcId) {
   // Cache locally
   await Foods.save(normalized);
   return normalized;
+}
+
+// ─── Backend Food Tables ─────────────────────────────────────────────────────
+
+function extractBackendFoodRows(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.foods)) return payload.foods;
+  if (Array.isArray(payload?.results)) return payload.results;
+  if (Array.isArray(payload?.items)) return payload.items;
+  return [];
+}
+
+function normalizeBackendFood(item) {
+  const rawId = item.id || item.food_id || item.menu_item_id || item.sku || item.name;
+  const sourceName = item.source_label || item.restaurant || item.brand || item.table || item.source || 'Backend';
+  const servingSize = item.serving_size ?? item.servingSize ?? item.servingQty ?? 1;
+  const servingUnit = normalizeServingUnit(item.serving_unit || item.servingUnit || item.unit || 'serving');
+  const nutrition = item.nutrition || {};
+
+  return {
+    id: `backend_${String(sourceName).toLowerCase().replace(/[^a-z0-9]+/g, '_')}_${String(rawId).toLowerCase().replace(/[^a-z0-9]+/g, '_')}`,
+    source: 'backend',
+    source_label: sourceName,
+    backend_id: rawId,
+    name: item.name || item.food_name || item.description || 'Unnamed food',
+    brand: item.brand || item.restaurant || item.vendor || null,
+    category: item.category || item.menu_category || item.table || null,
+    serving_size: numberOrNull(servingSize) ?? 1,
+    serving_unit: servingUnit,
+    portions: Array.isArray(item.portions) ? item.portions : [],
+    nutrition: {
+      calories:      numberOrNull(nutrition.calories ?? item.calories),
+      protein:       numberOrNull(nutrition.protein ?? item.protein),
+      fat:           numberOrNull(nutrition.fat ?? item.fat),
+      carbs:         numberOrNull(nutrition.carbs ?? nutrition.carbohydrates ?? item.carbs ?? item.carbohydrates),
+      fiber:         numberOrNull(nutrition.fiber ?? item.fiber),
+      sugar:         numberOrNull(nutrition.sugar ?? item.sugar),
+      sodium:        numberOrNull(nutrition.sodium ?? item.sodium),
+      saturated_fat: numberOrNull(nutrition.saturated_fat ?? nutrition.saturatedFat ?? item.saturated_fat ?? item.saturatedFat)
+    },
+    fetched_at: new Date().toISOString()
+  };
+}
+
+function normalizeBundledFood(row, source) {
+  const name = row.name || row.Name || row['Menu Item'] || row.food_name || row.description;
+  const saltGrams = numberOrNull(row['Salt (g)'] ?? row.salt_g ?? row.salt);
+
+  return {
+    id: `bundled_${source.id}_${slugify(name)}`,
+    source: 'bundled',
+    source_label: source.label,
+    backend_id: `${source.id}:${name}`,
+    name: name || 'Unnamed food',
+    brand: row.brand || source.brand || source.label,
+    category: row.category || source.category || null,
+    serving_size: numberOrNull(row.serving_size ?? row.servingSize) ?? 1,
+    serving_unit: normalizeServingUnit(row.serving_unit || row.servingUnit || 'serving'),
+    portions: [],
+    nutrition: {
+      calories:      numberOrNull(row.calories ?? row['Energy (kcal)']),
+      protein:       numberOrNull(row.protein ?? row['Protein (g)']),
+      fat:           numberOrNull(row.fat ?? row['Fat (g)']),
+      carbs:         numberOrNull(row.carbs ?? row.carbohydrates ?? row['Carbohydrates (g)']),
+      fiber:         numberOrNull(row.fiber ?? row.fibre ?? row['Fibre (g)']),
+      sugar:         numberOrNull(row.sugar ?? row.sugars ?? row['Sugars (g)']),
+      sodium:        numberOrNull(row.sodium ?? row['Sodium (mg)']) ?? (saltGrams !== null ? Math.round(saltGrams * 400) : null),
+      saturated_fat: numberOrNull(row.saturated_fat ?? row.saturatedFat ?? row['Saturated Fat (g)'])
+    },
+    fetched_at: new Date().toISOString()
+  };
+}
+
+async function loadBundledFoodSource(source) {
+  if (bundledFoodCache.has(source.id)) return bundledFoodCache.get(source.id);
+
+  const promise = fetch(source.url)
+    .then(response => {
+      if (!response.ok) throw new Error(`Bundled food source failed: ${source.url}`);
+      return response.text();
+    })
+    .then(text => parseCSV(text).map(row => normalizeBundledFood(row, source)));
+
+  bundledFoodCache.set(source.id, promise);
+  return promise;
+}
+
+async function searchBundledFoods(query, { page = 1, pageSize = 20 } = {}) {
+  if (!query || query.trim().length < 2) return [];
+
+  const needle = query.trim().toLowerCase();
+  const compactNeedle = normalizeSearchText(query);
+  const foods = (await Promise.all(
+    BUNDLED_FOOD_SOURCES.map(source => loadBundledFoodSource(source).catch(err => {
+      console.warn('Bundled food source unavailable:', err);
+      return [];
+    }))
+  )).flat();
+
+  const matches = foods.filter(food => [
+    food.name,
+    food.brand,
+    food.category,
+    food.source_label
+  ].some(value => {
+    const text = String(value || '').toLowerCase();
+    return text.includes(needle) || normalizeSearchText(text).includes(compactNeedle);
+  }));
+
+  const start = (page - 1) * pageSize;
+  return matches.slice(start, start + pageSize);
+}
+
+async function searchBackendFoods(query, { page = 1, pageSize = 20, endpointUrl = null } = {}) {
+  if (!query || query.trim().length < 2) return [];
+
+  const configuredUrl = endpointUrl || await getBackendFoodSourceUrl();
+  if (!configuredUrl) return [];
+
+  const url = new URL(configuredUrl);
+  url.searchParams.set('q', query.trim());
+  url.searchParams.set('page', page);
+  url.searchParams.set('pageSize', pageSize);
+
+  const response = await fetch(url.toString());
+  if (!response.ok) throw new Error(`Backend food search failed: ${response.status}`);
+
+  const payload = await response.json();
+  return extractBackendFoodRows(payload).map(normalizeBackendFood);
 }
 
 async function saveFavoriteFood(food) {
@@ -412,21 +689,38 @@ async function searchFoods(query, { page = 1, pageSize = 20 } = {}) {
       .map(f => Foods.save(f).catch(() => null))
   );
 
-  const localFavorites = page === 1 ? localResults.filter(f => f.favorite) : [];
-  if (page === 1 && localFavorites.length) {
-    return [
-      ...localFavorites,
-      ...localResults.filter(f => !f.favorite)
-    ];
-  }
+  const orderedLocalResults = page === 1
+    ? [
+        ...localResults.filter(f => f.favorite),
+        ...localResults.filter(f => !f.favorite)
+      ]
+    : [];
 
-  const usda = await searchUSDA(query, pageSize, page);
+  const bundled = await searchBundledFoods(query, { page, pageSize });
+  const backend = await searchBackendFoods(query, { page, pageSize }).catch(err => {
+    console.warn('Backend food search unavailable:', err);
+    return [];
+  });
+  const usda = await searchUSDA(query, pageSize, page).catch(err => {
+    if (orderedLocalResults.length || bundled.length || backend.length) {
+      console.warn('USDA search unavailable; showing local/bundled/backend results:', err);
+      return [];
+    }
+    throw err;
+  });
 
   // Deduplicate: if a USDA food is already cached locally, prefer the cached version
   const localIds = new Set(localResults.map(f => f.id));
+  const bundledIds = new Set(bundled.map(f => f.id));
+  const backendIds = new Set([...bundledIds, ...backend.map(f => f.id)]);
   const filteredUSDA = usda.filter(f => !localIds.has(f.id));
+  const filteredBundled = bundled.filter(f => !localIds.has(f.id));
+  const filteredBackend = backend.filter(f => !localIds.has(f.id));
+  const dedupedUSDA = filteredUSDA.filter(f => !backendIds.has(f.id));
 
-  return page === 1 ? [...localResults, ...filteredUSDA] : filteredUSDA;
+  return page === 1
+    ? [...orderedLocalResults, ...filteredBundled, ...filteredBackend, ...dedupedUSDA]
+    : [...filteredBundled, ...filteredBackend, ...dedupedUSDA];
 }
 
 // ─── Nutrition Summary Utilities ──────────────────────────────────────────────
@@ -513,12 +807,18 @@ export {
   searchUSDA,
   getFoodDetail,
   getFavoriteFoods,
+  clearBackendFoodSourceUrl,
   clearUSDAApiKey,
+  getBackendFoodSourceStatus,
   getUSDAApiKeyStatus,
   removeFavoriteFood,
+  saveBackendFoodSourceUrl,
   saveUSDAApiKey,
   saveFavoriteFood,
+  validateBackendFoodSourceUrl,
   validateUSDAApiKey,
+  searchBundledFoods,
+  searchBackendFoods,
   searchFoods,
   createCustomFood,
   scaleNutrition,

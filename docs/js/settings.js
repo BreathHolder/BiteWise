@@ -1,8 +1,18 @@
 // settings.js - App settings and targets
 
 import { Profile, Targets } from './db.js';
-import { clearUSDAApiKey, getUSDAApiKeyStatus, saveUSDAApiKey, validateUSDAApiKey } from './food.js';
+import {
+  clearBackendFoodSourceUrl,
+  clearUSDAApiKey,
+  getBackendFoodSourceStatus,
+  getUSDAApiKeyStatus,
+  saveBackendFoodSourceUrl,
+  saveUSDAApiKey,
+  validateBackendFoodSourceUrl,
+  validateUSDAApiKey
+} from './food.js';
 import { showToast } from './app.js';
+import { APP_VERSION } from './version.js';
 
 const monthOptions = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -109,6 +119,16 @@ const SettingsScreen = {
             </div>
             <div class="settings-row-arrow">›</div>
           </div>
+          <div class="settings-row" id="btn-backend-food-source">
+            <div class="settings-row-left">
+              <div class="settings-row-icon">🍔</div>
+              <div>
+                <div class="settings-row-label">Backend food tables</div>
+                <div class="settings-row-sub">Search restaurant and home menu data</div>
+              </div>
+            </div>
+            <div class="settings-row-arrow">›</div>
+          </div>
 
           <!-- Local Data -->
           <div class="settings-section-title">Local Data</div>
@@ -130,7 +150,7 @@ const SettingsScreen = {
               <div class="settings-row-icon">🌿</div>
               <div>
                 <div class="settings-row-label">BiteWise</div>
-                <div class="settings-row-sub">Version 1.1.2 · GPL-3.0</div>
+                <div class="settings-row-sub">Version ${APP_VERSION} · GPL-3.0</div>
               </div>
             </div>
           </div>
@@ -198,6 +218,10 @@ const SettingsScreen = {
 
     document.getElementById('btn-usda-api-key').addEventListener('click', () => {
       this.renderUSDAApiKey(container);
+    });
+
+    document.getElementById('btn-backend-food-source').addEventListener('click', () => {
+      this.renderBackendFoodSource(container);
     });
 
     document.getElementById('btn-manage-cloud').addEventListener('click', () => {
@@ -512,6 +536,75 @@ const SettingsScreen = {
     document.getElementById('btn-clear-usda-key')?.addEventListener('click', async () => {
       await clearUSDAApiKey();
       showToast('Using DEMO_KEY', 'info');
+      document.getElementById('settings-modal').classList.remove('open');
+      await this.render(container);
+    });
+  },
+
+  async renderBackendFoodSource(container) {
+    this.openModal('Backend Food Tables');
+    const body = document.getElementById('settings-modal-body');
+    const status = await getBackendFoodSourceStatus();
+
+    body.innerHTML = `
+      <p style="font-size:0.88rem;color:var(--text-muted);margin-bottom:16px;line-height:1.5;">
+        Add a search endpoint for your own menu tables. The Log search will call it with
+        <code>q</code>, <code>page</code>, and <code>pageSize</code> query parameters and
+        merge the returned foods with saved foods and USDA results.
+      </p>
+      <div class="form-group">
+        <label class="form-label" for="backend-food-url-input">Search endpoint URL</label>
+        <input
+          class="form-input"
+          type="url"
+          id="backend-food-url-input"
+          value="${status.url}"
+          placeholder="https://example.com/api/foods/search"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+        />
+        <div class="form-hint">
+          Return an array, or an object with <code>foods</code>, <code>results</code>, or <code>items</code>.
+        </div>
+      </div>
+      <button class="btn btn-primary btn-full" id="btn-save-backend-food-source">Save endpoint</button>
+      ${status.enabled ? `<button class="btn btn-ghost btn-full" id="btn-clear-backend-food-source" style="margin-top:8px;color:var(--orange-500);">Disable backend search</button>` : ''}
+    `;
+
+    document.getElementById('btn-save-backend-food-source').addEventListener('click', async () => {
+      const value = document.getElementById('backend-food-url-input').value.trim();
+      const button = document.getElementById('btn-save-backend-food-source');
+      if (!value) {
+        showToast('Enter a backend search URL first', 'error');
+        return;
+      }
+
+      button.disabled = true;
+      button.textContent = 'Checking...';
+      try {
+        const valid = await validateBackendFoodSourceUrl(value);
+        if (!valid) {
+          showToast('Backend endpoint did not return searchable foods', 'error');
+          button.disabled = false;
+          button.textContent = 'Save endpoint';
+          return;
+        }
+
+        await saveBackendFoodSourceUrl(value);
+        showToast('Backend food source saved', 'success');
+        document.getElementById('settings-modal').classList.remove('open');
+        await this.render(container);
+      } catch (err) {
+        showToast(err.message || 'Could not save backend food source', 'error');
+        button.disabled = false;
+        button.textContent = 'Save endpoint';
+      }
+    });
+
+    document.getElementById('btn-clear-backend-food-source')?.addEventListener('click', async () => {
+      await clearBackendFoodSourceUrl();
+      showToast('Backend food search disabled', 'info');
       document.getElementById('settings-modal').classList.remove('open');
       await this.render(container);
     });
