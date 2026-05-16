@@ -26,6 +26,14 @@ function getDateParts(dob) {
   return match ? { year: match[1], month: match[2], day: String(Number(match[3])) } : { year: '', month: '', day: '' };
 }
 
+function escapeAttr(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 function getDateOfBirthValue(prefix, required = false) {
   const month = document.getElementById(`${prefix}-month`).value;
   const dayRaw = document.getElementById(`${prefix}-day`).value;
@@ -614,9 +622,10 @@ const SettingsScreen = {
   async renderManageCloud(container) {
     this.openModal('Backup & Restore');
     const body = document.getElementById('settings-modal-body');
-    const [provider, lastSync] = await Promise.all([
+    const [provider, lastSync, clientConfig] = await Promise.all([
       Auth.getProvider(),
-      Sync.getLastSyncDisplay()
+      Sync.getLastSyncDisplay(),
+      Auth.getClientConfigStatus()
     ]);
     const providerLabel = provider === 'microsoft'
       ? 'OneDrive'
@@ -645,6 +654,41 @@ const SettingsScreen = {
         <button class="btn btn-secondary" id="btn-connect-onedrive">OneDrive</button>
         <button class="btn btn-secondary" id="btn-connect-google">Google Drive</button>
       </div>
+      <button class="btn btn-ghost btn-full" id="btn-client-id-help" style="margin-bottom:16px;">
+        How to get client IDs
+      </button>
+      <div class="form-group">
+        <label class="form-label" for="onedrive-client-id-input">OneDrive client ID</label>
+        <input
+          class="form-input"
+          type="text"
+          id="onedrive-client-id-input"
+          value="${escapeAttr(clientConfig.microsoftClientId)}"
+          placeholder="Paste Microsoft Azure client ID"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+        />
+        <div class="form-hint">
+          ${clientConfig.microsoftSavedLocally ? 'Saved locally in this browser.' : 'Optional config.js value will appear here if present.'}
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label" for="google-client-id-input">Google Drive client ID</label>
+        <input
+          class="form-input"
+          type="text"
+          id="google-client-id-input"
+          value="${escapeAttr(clientConfig.googleClientId)}"
+          placeholder="Paste Google OAuth client ID"
+          autocomplete="off"
+          autocapitalize="off"
+          spellcheck="false"
+        />
+        <div class="form-hint">
+          ${clientConfig.googleSavedLocally ? 'Saved locally in this browser.' : 'Optional config.js value will appear here if present.'}
+        </div>
+      </div>
       <button class="btn btn-primary btn-full" id="btn-cloud-backup" ${provider ? '' : 'disabled'}>
         Back up now
       </button>
@@ -659,14 +703,54 @@ const SettingsScreen = {
 
     document.getElementById('btn-connect-onedrive').addEventListener('click', async () => {
       try {
+        await Auth.saveClientId('microsoft', document.getElementById('onedrive-client-id-input').value);
         await Auth.Microsoft.startLogin();
       } catch (err) {
         showToast(err.message, 'error', 6000);
       }
     });
 
+    document.getElementById('btn-client-id-help').addEventListener('click', () => {
+      const redirectUri = `${window.location.origin}${window.location.pathname}`;
+      body.innerHTML = `
+        <p style="font-size:0.88rem;color:var(--text-muted);margin-bottom:16px;line-height:1.5;">
+          Create an OAuth app with the same redirect URI BiteWise is running on, then paste the client ID back into Backup & restore.
+        </p>
+        <div class="card" style="background:var(--cream-50);margin-bottom:16px;">
+          <div class="card-padded">
+            <div style="font-size:0.78rem;font-weight:600;text-transform:uppercase;letter-spacing:0.06em;color:var(--text-muted);margin-bottom:6px;">
+              Redirect URI
+            </div>
+            <code style="display:block;white-space:normal;word-break:break-all;font-size:0.82rem;color:var(--text-dark);">
+              ${redirectUri}
+            </code>
+          </div>
+        </div>
+        <div class="whats-new-list">
+          <div class="whats-new-item">
+            <div class="whats-new-title">OneDrive / Microsoft</div>
+            <div class="whats-new-copy">
+              Go to portal.azure.com, create an App registration, choose personal Microsoft accounts, add a Single-page application redirect URI, then copy the Application client ID.
+            </div>
+          </div>
+          <div class="whats-new-item">
+            <div class="whats-new-title">Google Drive</div>
+            <div class="whats-new-copy">
+              Go to console.cloud.google.com, enable the Google Drive API, create an OAuth client ID for a Web application, add the authorized redirect URI, then copy the client ID.
+            </div>
+          </div>
+        </div>
+        <button class="btn btn-primary btn-full" id="btn-back-cloud-settings" style="margin-top:18px;">Back to backup settings</button>
+      `;
+
+      document.getElementById('btn-back-cloud-settings').addEventListener('click', () => {
+        this.renderManageCloud(container);
+      });
+    });
+
     document.getElementById('btn-connect-google').addEventListener('click', async () => {
       try {
+        await Auth.saveClientId('google', document.getElementById('google-client-id-input').value);
         await Auth.Google.startLogin();
       } catch (err) {
         showToast(err.message, 'error', 6000);

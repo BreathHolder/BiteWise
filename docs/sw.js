@@ -19,6 +19,7 @@ const STATIC_ASSETS = [
   '/BiteWise/js/dashboard.js',
   '/BiteWise/js/settings.js',
   '/BiteWise/data/wendys_core_menu.csv',
+  '/BiteWise/data/mcdonalds_core_menu.csv',
   '/BiteWise/manifest.json',
   'https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;0,9..144,700;1,9..144,400&family=DM+Sans:wght@300;400;500;600&display=swap'
 ];

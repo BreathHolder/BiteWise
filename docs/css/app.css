@@ -1183,6 +1183,10 @@ ul, ol { list-style: none; }
 }
 
 /* Food search results */
+.food-source-control {
+  margin-bottom: 12px;
+}
+
 .saved-foods-section {
   margin-bottom: 16px;
 }

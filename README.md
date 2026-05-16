@@ -40,8 +40,12 @@ and enter it in Settings -> USDA API key, or copy `docs/js/config.example.js` to
 
 ### 3. Cloud backup setup (optional)
 
-To enable Settings -> Backup & restore, copy `docs/js/config.example.js` to
-`docs/js/config.js` and set one or both OAuth client IDs:
+To enable Settings -> Backup & restore, create one or both OAuth apps and paste
+their client IDs into the Backup & restore screen. BiteWise saves those IDs
+locally in IndexedDB along with the provider tokens.
+
+You can also prefill client IDs by copying `docs/js/config.example.js` to
+`docs/js/config.js` and setting:
 
 ```js
 MICROSOFT_CLIENT_ID: '...',
@@ -58,11 +62,12 @@ folder, and Google Drive stores it in the hidden `appDataFolder`.
 
 ### 4. Bundled food tables
 
-BiteWise can search static nutrition tables stored in `docs/data/`. The Wendy's
-core menu is included as the first bundled source at:
+BiteWise can search static nutrition tables stored in `docs/data/`. Wendy's and
+McDonald's core menus are included as bundled sources:
 
 ```text
 docs/data/wendys_core_menu.csv
+docs/data/mcdonalds_core_menu.csv
 ```
 
 The CSV header format is:
@@ -93,8 +98,9 @@ To add another bundled source:
 
 4. Add the CSV path to `STATIC_ASSETS` in `docs/sw.js` if it should be available offline.
 
-Bundled foods are merged into Log search results before the configurable backend
-endpoint and USDA results.
+The Log food search defaults to USDA. Use the source selector in the Add Food
+modal to search only Wendy's, only McDonald's, the configured backend endpoint,
+or all sources together.
 
 ### 5. Backend food tables (optional)
 

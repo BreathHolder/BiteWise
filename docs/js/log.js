@@ -5,6 +5,7 @@ import {
   searchFoods,
   getFoodDetail,
   getFavoriteFoods,
+  getFoodSearchSources,
   removeFavoriteFood,
   saveFavoriteFood,
   sumNutrition,
@@ -27,6 +28,7 @@ const LogScreen = {
   searchHasMore: false,
   searchLoading: false,
   searchScrollHandler: null,
+  searchSource: 'usda',
 
   dateStringFromDate(date) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
@@ -388,6 +390,7 @@ const LogScreen = {
 
   openFoodModal(slot, container) {
     const slotInfo = MEAL_SLOTS.find(s => s.value === slot);
+    this.searchSource = 'usda';
     document.getElementById('modal-title').textContent = `Add to ${slotInfo?.label || slot}`;
     this.renderModalSearch(slot, container).catch(err => {
       document.getElementById('modal-body').innerHTML = `<div class="form-error">${err.message}</div>`;
@@ -402,7 +405,16 @@ const LogScreen = {
 
   async renderModalSearch(slot, pageContainer) {
     const body = document.getElementById('modal-body');
+    const sources = getFoodSearchSources();
     body.innerHTML = `
+      <div class="food-source-control form-group">
+        <label class="form-label" for="food-source-select">Source</label>
+        <select class="form-select" id="food-source-select">
+          ${sources.map(source => `
+            <option value="${source.value}" ${source.value === this.searchSource ? 'selected' : ''}>${source.label}</option>
+          `).join('')}
+        </select>
+      </div>
       <div class="search-bar form-group">
         <span class="search-icon">🔍</span>
         <input
@@ -423,11 +435,13 @@ const LogScreen = {
     `;
 
     const searchInput = document.getElementById('food-search-input');
+    const sourceSelect = document.getElementById('food-source-select');
     const savedDiv = document.getElementById('saved-foods');
     const resultsDiv = document.getElementById('search-results');
     const modalSheet = body.closest('.modal-sheet') || body;
 
     searchInput.focus();
+    this.searchSource = sourceSelect.value || 'usda';
     this.searchQuery = '';
     this.searchInputValue = '';
     this.searchPage = 1;
@@ -442,6 +456,27 @@ const LogScreen = {
       savedDiv.innerHTML = '';
       console.warn('Could not load saved foods:', err);
     }
+
+    sourceSelect.addEventListener('change', async () => {
+      clearTimeout(this.searchTimeout);
+      this.searchSource = sourceSelect.value || 'usda';
+      this.searchQuery = '';
+      this.searchPage = 1;
+      this.searchResults = [];
+      this.searchHasMore = false;
+
+      const q = searchInput.value.trim();
+      this.searchInputValue = q;
+
+      if (q.length < 2) {
+        resultsDiv.innerHTML = '';
+        savedDiv.style.display = '';
+        return;
+      }
+
+      savedDiv.style.display = 'none';
+      await this.loadFoodSearchPage(q, slot, pageContainer, resultsDiv, true);
+    });
 
     searchInput.addEventListener('input', () => {
       clearTimeout(this.searchTimeout);
@@ -501,7 +536,9 @@ const LogScreen = {
     }
 
     try {
-      const foods = await searchFoods(query, { page: this.searchPage, pageSize: 20 });
+      const source = this.searchSource || 'usda';
+      const foods = await searchFoods(query, { page: this.searchPage, pageSize: 20, source });
+      if (source !== this.searchSource) return;
       if (query !== this.searchInputValue) return;
       this.searchResults = reset ? foods : [...this.searchResults, ...foods];
       this.searchHasMore = foods.length >= 20 && !foods.some(f => f.favorite);

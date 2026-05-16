@@ -17,6 +17,14 @@ const BUNDLED_FOOD_SOURCES = [
     category: 'Core Menu',
     url: 'data/wendys_core_menu.csv',
     format: 'csv'
+  },
+  {
+    id: 'mcdonalds_core_menu',
+    label: "McDonald's",
+    brand: "McDonald's",
+    category: 'Core Menu',
+    url: 'data/mcdonalds_core_menu.csv',
+    format: 'csv'
   }
 ];
 let configPromise = null;
@@ -458,6 +466,33 @@ async function searchBundledFoods(query, { page = 1, pageSize = 20 } = {}) {
   return matches.slice(start, start + pageSize);
 }
 
+async function searchBundledFoodSource(sourceId, query, { page = 1, pageSize = 20 } = {}) {
+  if (!query || query.trim().length < 2) return [];
+
+  const source = BUNDLED_FOOD_SOURCES.find(item => item.id === sourceId);
+  if (!source) return [];
+
+  const needle = query.trim().toLowerCase();
+  const compactNeedle = normalizeSearchText(query);
+  const foods = await loadBundledFoodSource(source).catch(err => {
+    console.warn('Bundled food source unavailable:', err);
+    return [];
+  });
+
+  const matches = foods.filter(food => [
+    food.name,
+    food.brand,
+    food.category,
+    food.source_label
+  ].some(value => {
+    const text = String(value || '').toLowerCase();
+    return text.includes(needle) || normalizeSearchText(text).includes(compactNeedle);
+  }));
+
+  const start = (page - 1) * pageSize;
+  return matches.slice(start, start + pageSize);
+}
+
 async function searchBackendFoods(query, { page = 1, pageSize = 20, endpointUrl = null } = {}) {
   if (!query || query.trim().length < 2) return [];
 
@@ -680,7 +715,19 @@ async function createCustomFood(foodData) {
  * @param {string} query
  * @returns {Promise<Array>} Combined and deduplicated food results
  */
-async function searchFoods(query, { page = 1, pageSize = 20 } = {}) {
+async function searchFoods(query, { page = 1, pageSize = 20, source = 'all' } = {}) {
+  if (source === 'usda') {
+    return searchUSDA(query, pageSize, page);
+  }
+
+  if (source === 'backend') {
+    return searchBackendFoods(query, { page, pageSize });
+  }
+
+  if (source.startsWith('bundled:')) {
+    return searchBundledFoodSource(source.slice('bundled:'.length), query, { page, pageSize });
+  }
+
   const localResults = (await Foods.searchLocal(query)).map(migrateCachedUSDAFood);
 
   await Promise.all(
@@ -721,6 +768,18 @@ async function searchFoods(query, { page = 1, pageSize = 20 } = {}) {
   return page === 1
     ? [...orderedLocalResults, ...filteredBundled, ...filteredBackend, ...dedupedUSDA]
     : [...filteredBundled, ...filteredBackend, ...dedupedUSDA];
+}
+
+function getFoodSearchSources() {
+  return [
+    { value: 'usda', label: 'USDA' },
+    ...BUNDLED_FOOD_SOURCES.map(source => ({
+      value: `bundled:${source.id}`,
+      label: source.label
+    })),
+    { value: 'backend', label: 'Backend' },
+    { value: 'all', label: 'All sources' }
+  ];
 }
 
 // ─── Nutrition Summary Utilities ──────────────────────────────────────────────
@@ -820,6 +879,7 @@ export {
   searchBundledFoods,
   searchBackendFoods,
   searchFoods,
+  getFoodSearchSources,
   createCustomFood,
   scaleNutrition,
   sumNutrition,

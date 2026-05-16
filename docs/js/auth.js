@@ -2,9 +2,8 @@
 // Tokens are stored in IndexedDB (SyncMeta store) only. Nothing is sent to GitHub Pages servers.
 //
 // SETUP REQUIRED:
-// Copy docs/js/config.example.js to docs/js/config.js and fill in your client IDs.
-// config.js is gitignored and will never be committed to the repository.
-// Each user of this app registers their own OAuth apps — see README.md for instructions.
+// Enter OAuth client IDs in Settings -> Backup & restore, or optionally provide
+// docs/js/config.js. Client IDs and tokens are stored locally in IndexedDB.
 
 import { SyncMeta } from './db.js';
 
@@ -22,7 +21,17 @@ async function getConfig() {
       .then(module => ({ ...DEFAULT_CONFIG, ...(module.CONFIG || {}) }))
       .catch(() => DEFAULT_CONFIG);
   }
-  return configPromise;
+  const config = await configPromise;
+  const [microsoftClientId, googleClientId] = await Promise.all([
+    SyncMeta.get(KEYS.MICROSOFT_CLIENT_ID),
+    SyncMeta.get(KEYS.GOOGLE_CLIENT_ID)
+  ]);
+
+  return {
+    ...config,
+    MICROSOFT_CLIENT_ID: microsoftClientId?.value || config.MICROSOFT_CLIENT_ID,
+    GOOGLE_CLIENT_ID: googleClientId?.value || config.GOOGLE_CLIENT_ID
+  };
 }
 
 function getRedirectUri() {
@@ -72,6 +81,8 @@ const GOOGLE_CONFIG = {
 const KEYS = {
   MICROSOFT_TOKEN: 'microsoft_token',
   GOOGLE_TOKEN: 'google_token',
+  MICROSOFT_CLIENT_ID: 'microsoft_client_id',
+  GOOGLE_CLIENT_ID: 'google_client_id',
   PROVIDER: 'sync_provider'          // 'microsoft' | 'google' | null
 };
 
@@ -367,6 +378,38 @@ const Google = {
 const Auth = {
   Microsoft,
   Google,
+
+  async getClientConfigStatus() {
+    const [config, microsoftLocal, googleLocal] = await Promise.all([
+      getConfig(),
+      SyncMeta.get(KEYS.MICROSOFT_CLIENT_ID),
+      SyncMeta.get(KEYS.GOOGLE_CLIENT_ID)
+    ]);
+
+    return {
+      microsoftClientId: config.MICROSOFT_CLIENT_ID || '',
+      googleClientId: config.GOOGLE_CLIENT_ID || '',
+      microsoftSavedLocally: !!microsoftLocal?.value,
+      googleSavedLocally: !!googleLocal?.value
+    };
+  },
+
+  async saveClientId(provider, clientId) {
+    const value = (clientId || '').trim();
+    const key = provider === 'microsoft'
+      ? KEYS.MICROSOFT_CLIENT_ID
+      : provider === 'google'
+        ? KEYS.GOOGLE_CLIENT_ID
+        : null;
+    if (!key) throw new Error('Unknown OAuth provider.');
+
+    if (!value) {
+      await SyncMeta.remove(key);
+      return;
+    }
+
+    await SyncMeta.set(key, { value });
+  },
 
   /**
    * Get the currently configured sync provider ('microsoft' | 'google' | null).

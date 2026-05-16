@@ -1,6 +1,7 @@
 // config.example.js
-// Copy this file to config.js and fill in your values.
+// Optionally copy this file to config.js and fill in your values.
 // config.js is gitignored and will never be committed to the repository.
+// OAuth client IDs can also be entered in Settings -> Backup & restore and saved locally.
 //
 // See README.md for full instructions on registering your own OAuth apps.
 
