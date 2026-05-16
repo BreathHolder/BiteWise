@@ -25,6 +25,14 @@ const BUNDLED_FOOD_SOURCES = [
     category: 'Core Menu',
     url: 'data/mcdonalds_core_menu.csv',
     format: 'csv'
+  },
+  {
+    id: 'taco_bell_core_menu',
+    label: 'Taco Bell',
+    brand: 'Taco Bell',
+    category: 'Core Menu',
+    url: 'data/taco_bell_core_menu.csv',
+    format: 'csv'
   }
 ];
 let configPromise = null;

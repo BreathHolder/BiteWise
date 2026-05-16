@@ -74,12 +74,13 @@ an existing backup before entering the app.
 
 ### 4. Bundled food tables
 
-BiteWise can search static nutrition tables stored in `docs/data/`. Wendy's and
-McDonald's core menus are included as bundled sources:
+BiteWise can search static nutrition tables stored in `docs/data/`. Wendy's,
+McDonald's, and Taco Bell core menus are included as bundled sources:
 
 ```text
 docs/data/wendys_core_menu.csv
 docs/data/mcdonalds_core_menu.csv
+docs/data/taco_bell_core_menu.csv
 ```
 
 The CSV header format is:
