@@ -1,6 +1,6 @@
 // log.js - Food and water log screen
 
-import { FoodLog, WaterLog, Targets, Profile, todayString } from './db.js';
+import { FoodLog, WaterLog, WeightLog, Targets, Profile, todayString } from './db.js';
 import {
   searchFoods,
   getFoodDetail,
@@ -20,6 +20,7 @@ import { showToast } from './app.js';
 const LogScreen = {
   date: null,
   waterUnit: 'oz',
+  weightUnit: 'lb',
   searchTimeout: null,
   searchQuery: '',
   searchInputValue: '',
@@ -138,11 +139,13 @@ const LogScreen = {
     this.date = this.clampLogDate(selectedDate);
     const profile = await Profile.get();
     this.waterUnit = profile?.water_unit || 'oz';
+    this.weightUnit = profile?.weight_unit || 'lb';
     const dateBounds = this.getLogDateBounds();
 
-    const [entries, waterEntries, targets] = await Promise.all([
+    const [entries, waterEntries, weightEntry, targets] = await Promise.all([
       FoodLog.getByDate(this.date),
       WaterLog.getByDate(this.date),
+      WeightLog.getByDate(this.date),
       Targets.getActive()
     ]);
 
@@ -226,6 +229,33 @@ const LogScreen = {
               />
               <button class="water-custom-btn add" data-water-action="add" type="button" aria-label="Add custom water amount">+</button>
               <button class="water-custom-btn remove" data-water-action="remove" type="button" aria-label="Remove custom water amount">-</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Weight Tracker -->
+        <div class="card" style="margin:12px 16px 0;">
+          <div class="weight-tracker">
+            <div class="weight-tracker-header">
+              <span class="display-sm" style="font-size:1rem;">Daily weigh-in</span>
+              <span class="weight-current">
+                ${weightEntry ? `${weightEntry.amount}${weightEntry.unit || this.weightUnit}` : 'Not logged'}
+              </span>
+            </div>
+            <div class="weight-control">
+              <input
+                class="form-input"
+                type="number"
+                id="weight-input"
+                min="0"
+                step="0.1"
+                value="${weightEntry?.amount ?? ''}"
+                placeholder="Weight (${this.weightUnit})"
+                inputmode="decimal"
+                aria-label="Daily weight in ${this.weightUnit}"
+              />
+              <button class="btn btn-primary" id="btn-save-weight" type="button">Save</button>
+              ${weightEntry ? `<button class="btn btn-ghost" id="btn-delete-weight" type="button">Remove</button>` : ''}
             </div>
           </div>
         </div>
@@ -326,6 +356,18 @@ const LogScreen = {
       });
     });
 
+    document.getElementById('btn-save-weight')?.addEventListener('click', async () => {
+      const input = document.getElementById('weight-input');
+      const amount = parseFloat(input?.value);
+      await this.saveWeightAmount(amount, container);
+    });
+
+    document.getElementById('btn-delete-weight')?.addEventListener('click', async () => {
+      await WeightLog.delete(this.date);
+      showToast('Weight removed', 'info');
+      await this.render(container, this.date);
+    });
+
     // Add food buttons
     container.querySelectorAll('[data-slot]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -383,6 +425,22 @@ const LogScreen = {
       `${action === 'remove' ? 'Removed' : 'Added'} ${amount}${this.waterUnit} of water`,
       action === 'remove' ? 'info' : 'success'
     );
+    await this.render(container, this.date);
+  },
+
+  async saveWeightAmount(amount, container) {
+    if (!amount || amount <= 0) {
+      showToast('Enter a valid weight', 'error');
+      return;
+    }
+
+    await WeightLog.save({
+      date: this.date,
+      amount: Math.round(amount * 10) / 10,
+      unit: this.weightUnit
+    });
+
+    showToast('Weight saved', 'success');
     await this.render(container, this.date);
   },
 

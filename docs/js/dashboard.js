@@ -1,6 +1,6 @@
 // dashboard.js - Metrics dashboard with daily/weekly/monthly trend views
 
-import { FoodLog, WaterLog, Targets, Profile, todayString } from './db.js';
+import { FoodLog, WaterLog, WeightLog, Targets, Profile, todayString } from './db.js';
 import { sumNutrition, SNACK_MOTIVATIONS } from './food.js';
 
 // ─── Dashboard Screen ─────────────────────────────────────────────────────────
@@ -8,10 +8,12 @@ import { sumNutrition, SNACK_MOTIVATIONS } from './food.js';
 const DashboardScreen = {
   period: 'daily',
   waterUnit: 'oz',
+  weightUnit: 'lb',
 
   async render(container) {
     const profile = await Profile.get();
     this.waterUnit = profile?.water_unit || 'oz';
+    this.weightUnit = profile?.weight_unit || 'lb';
 
     const greeting = this.getGreeting(profile?.name);
     const today = new Date();
@@ -58,22 +60,24 @@ const DashboardScreen = {
     container.innerHTML = '<div style="text-align:center;padding:40px;"><div class="spinner"></div></div>';
 
     const { startDate, endDate, label } = this.getDateRange();
-    const [entries, waterEntries, targets] = await Promise.all([
+    const [entries, waterEntries, weightEntries, targets] = await Promise.all([
       FoodLog.getByDateRange(startDate, endDate),
       WaterLog.getByDateRange(startDate, endDate),
+      WeightLog.getByDateRange(startDate, endDate),
       Targets.getActive()
     ]);
 
     if (this.period === 'daily') {
-      await this.renderDailyView(container, entries, waterEntries, targets);
+      await this.renderDailyView(container, entries, waterEntries, weightEntries, targets);
     } else {
-      await this.renderTrendView(container, entries, waterEntries, targets, startDate, endDate);
+      await this.renderTrendView(container, entries, waterEntries, weightEntries, targets, startDate, endDate);
     }
   },
 
-  async renderDailyView(container, entries, waterEntries, targets) {
+  async renderDailyView(container, entries, waterEntries, weightEntries, targets) {
     const totals = sumNutrition(entries);
     const waterTotal = waterEntries.reduce((s, e) => s + (e.unit === this.waterUnit ? e.amount : 0), 0);
+    const weightEntry = weightEntries.find(e => e.date === todayString()) || null;
     const calorieTarget = targets?.calories || null;
     const waterTarget = targets?.water || null;
 
@@ -134,6 +138,17 @@ const DashboardScreen = {
         ${!waterTarget ? `<div class="form-hint" style="margin-top:6px;">Set a water goal in Settings → Targets</div>` : ''}
       </div>
 
+      <!-- Weight -->
+      <div class="card card-padded" style="margin-bottom:12px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+          <span style="font-family:var(--font-display);font-weight:600;color:var(--green-800);">Daily weigh-in</span>
+          <span style="font-size:0.95rem;font-weight:700;color:var(--green-800);">
+            ${weightEntry ? `${weightEntry.amount}${weightEntry.unit || this.weightUnit}` : 'Not logged'}
+          </span>
+        </div>
+        ${!weightEntry ? `<div class="form-hint" style="margin-top:6px;">Add today's weight from the Log tab.</div>` : ''}
+      </div>
+
       <!-- Meal breakdown -->
       <div class="card card-padded" style="margin-bottom:12px;">
         <div style="font-size:0.8rem;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted);margin-bottom:12px;">
@@ -170,7 +185,7 @@ const DashboardScreen = {
     `;
   },
 
-  async renderTrendView(container, entries, waterEntries, targets, startDate, endDate) {
+  async renderTrendView(container, entries, waterEntries, weightEntries, targets, startDate, endDate) {
     // Build per-day buckets
     const days = this.getDaysInRange(startDate, endDate);
     const byDay = {};
@@ -195,6 +210,12 @@ const DashboardScreen = {
     const avgCalories = Math.round(dailyTotals.reduce((s, d) => s + d.calories, 0) / days.length);
     const avgWater = Math.round(dailyTotals.reduce((s, d) => s + d.water, 0) / days.length);
     const maxCalories = Math.max(...dailyTotals.map(d => d.calories), 1);
+    const sortedWeightEntries = [...weightEntries].sort((a, b) => a.date.localeCompare(b.date));
+    const latestWeight = sortedWeightEntries[sortedWeightEntries.length - 1] || null;
+    const firstWeight = sortedWeightEntries[0] || null;
+    const weightChange = latestWeight && firstWeight && latestWeight.date !== firstWeight.date
+      ? Math.round((latestWeight.amount - firstWeight.amount) * 10) / 10
+      : null;
 
     // All-period snack motivation counts
     const allSnacks = entries.filter(e => e.meal_slot === 'snack' && e.snack_motivation);
@@ -224,6 +245,29 @@ const DashboardScreen = {
           <div style="font-size:0.75rem;color:var(--text-muted);">${this.waterUnit} / day</div>
         </div>
       </div>
+
+      ${latestWeight ? `
+        <div class="card card-padded" style="margin-bottom:12px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+            <div>
+              <div style="font-size:0.7rem;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">
+                Latest weight
+              </div>
+              <div style="font-family:var(--font-display);font-size:1.8rem;font-weight:700;color:var(--green-800);">
+                ${latestWeight.amount}${latestWeight.unit || this.weightUnit}
+              </div>
+            </div>
+            <div style="text-align:right;">
+              <div style="font-size:0.7rem;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted);margin-bottom:4px;">
+                Change
+              </div>
+              <div style="font-size:1rem;font-weight:700;color:var(--green-700);">
+                ${weightChange === null ? '&mdash;' : `${weightChange > 0 ? '+' : ''}${weightChange}${latestWeight.unit || this.weightUnit}`}
+              </div>
+            </div>
+          </div>
+        </div>
+      ` : ''}
 
       <!-- Calorie trend chart -->
       <div class="card card-padded" style="margin-bottom:12px;">
@@ -255,6 +299,8 @@ const DashboardScreen = {
           </div>
         ` : ''}
       </div>
+
+      ${sortedWeightEntries.length > 0 ? this.renderWeightTrend(sortedWeightEntries, days) : ''}
 
       <!-- Macro averages -->
       <div class="card card-padded" style="margin-bottom:12px;">
@@ -298,7 +344,7 @@ const DashboardScreen = {
         </div>
       ` : ''}
 
-      ${entries.length === 0 ? `
+      ${entries.length === 0 && sortedWeightEntries.length === 0 ? `
         <div class="empty-state fade-up">
           <div class="empty-icon">📊</div>
           <div class="empty-title">No data yet</div>
@@ -309,6 +355,46 @@ const DashboardScreen = {
   },
 
   // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+  renderWeightTrend(weightEntries, days) {
+    const weightByDay = {};
+    weightEntries.forEach(entry => {
+      weightByDay[entry.date] = entry;
+    });
+
+    const weights = weightEntries.map(entry => entry.amount);
+    const minWeight = Math.min(...weights);
+    const maxWeight = Math.max(...weights);
+    const range = Math.max(maxWeight - minWeight, 1);
+
+    return `
+      <div class="card card-padded" style="margin-bottom:12px;">
+        <div style="font-size:0.8rem;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--text-muted);margin-bottom:12px;">
+          Weight trend
+        </div>
+        <div style="height:120px;display:flex;align-items:flex-end;gap:${this.period === 'monthly' ? '3px' : '6px'};">
+          ${days.map(day => {
+            const entry = weightByDay[day];
+            const height = entry ? Math.max(((entry.amount - minWeight) / range) * 80 + 20, 8) : 4;
+            const isToday = day === todayString();
+            return `
+              <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;" title="${this.formatDayLabel(day)}${entry ? `: ${entry.amount}${entry.unit || this.weightUnit}` : ': no weigh-in'}">
+                <div style="
+                  width:100%;
+                  height:${height}%;
+                  background:${entry ? (isToday ? 'var(--green-600)' : 'var(--green-300)') : 'var(--cream-200)'};
+                  border-radius:4px 4px 0 0;
+                  transition:height 0.5s ease;
+                  min-height:3px;
+                "></div>
+                ${this.period !== 'monthly' ? `<div style="font-size:0.6rem;color:var(--text-muted);white-space:nowrap;">${this.formatDayLabel(day)}</div>` : ''}
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+  },
 
   renderMacroRow(label, value, target, unit, colorClass) {
     const pct = target ? Math.min(((value || 0) / target) * 100, 100) : 0;

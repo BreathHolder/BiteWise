@@ -802,6 +802,50 @@ ul, ol { list-style: none; }
   color: white;
 }
 
+/* ─── Weight Tracker ────────────────────────────────────────────────────────── */
+.weight-tracker {
+  padding: 16px;
+}
+
+.weight-tracker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.weight-current {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.weight-control {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.weight-control .form-input {
+  min-height: 42px;
+  padding: 9px 12px;
+  font-size: 0.9rem;
+}
+
+.weight-control .btn {
+  min-height: 42px;
+  white-space: nowrap;
+}
+
+@media (max-width: 380px) {
+  .weight-control {
+    grid-template-columns: 1fr;
+  }
+}
+
 /* ─── Onboarding Screens ─────────────────────────────────────────────────────── */
 .onboard-screen {
   min-height: 100dvh;

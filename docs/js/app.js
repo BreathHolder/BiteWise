@@ -61,11 +61,14 @@ const App = {
     const authResult = await Auth.handleRedirectIfPresent();
 
     // Check if user has completed onboarding
-    const profileExists = await Profile.exists();
+    const profile = await Profile.get();
 
-    if (!profileExists) {
+    if (!profile) {
       // First run: show onboarding
-      await this.startOnboarding();
+      await this.startOnboarding(authResult?.success ? 'restore' : 'welcome');
+    } else if (profile.onboarding_complete === false) {
+      // Profile exists but goal setup was not completed.
+      await this.startOnboarding('targets');
     } else {
       // Existing user: show main app
       this.renderApp();
@@ -80,12 +83,12 @@ const App = {
 
   // ─── Onboarding ─────────────────────────────────────────────────────────────
 
-  async startOnboarding() {
+  async startOnboarding(initialStep = 'welcome') {
     const root = document.getElementById('app');
     root.innerHTML = '<div id="onboarding-container"></div><div id="toast-container"></div>';
 
     const container = document.getElementById('onboarding-container');
-    await Onboarding.init(container);
+    await Onboarding.init(container, { initialStep });
 
     // Listen for onboarding completion
     window.addEventListener('onboarding-complete', async () => {

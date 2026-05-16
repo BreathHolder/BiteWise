@@ -4,7 +4,7 @@
 
 - [x] Re-enable OAuth sign-in for OneDrive and Google Drive cloud backup.
 - [x] Decide how to handle Google token exchange without browser CORS failures.
-- [ ] Restore backup and restore entry points in onboarding after OAuth works reliably.
+- [x] Restore backup and restore entry points in onboarding after OAuth works reliably.
 - [x] Restore cloud provider management and manual sync controls in settings.
 - [ ] Add verification for the full OAuth redirect, token refresh, backup, and restore flow.
 - [x] Add in ability to go back and add food or drink over the last 7 days.

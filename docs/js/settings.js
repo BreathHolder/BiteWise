@@ -739,6 +739,12 @@ const SettingsScreen = {
               Go to console.cloud.google.com, enable the Google Drive API, create an OAuth client ID for a Web application, add the authorized redirect URI, then copy the client ID.
             </div>
           </div>
+          <div class="whats-new-item">
+            <div class="whats-new-title">If Google says access is blocked</div>
+            <div class="whats-new-copy">
+              In Google Cloud, open Google Auth Platform, keep the app in Testing for personal use, and add the exact Google account you are signing in with under Test users. If you want anyone outside your test users to connect, publish the app and complete Google's verification process.
+            </div>
+          </div>
         </div>
         <button class="btn btn-primary btn-full" id="btn-back-cloud-settings" style="margin-top:18px;">Back to backup settings</button>
       `;

@@ -1,7 +1,9 @@
 // onboarding.js - First-run setup flow
-// Steps: welcome -> profile -> complete
+// Steps: welcome -> profile -> targets -> complete
 
-import { Profile } from './db.js';
+import { Profile, Targets } from './db.js';
+import { Auth } from './auth.js';
+import { Sync } from './sync.js';
 
 const monthOptions = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -30,14 +32,23 @@ function getDateOfBirthValue(prefix) {
   return dob;
 }
 
+function escapeAttr(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 // ─── Onboarding Orchestrator ──────────────────────────────────────────────────
 
 const Onboarding = {
   currentStep: 0,
-  steps: ['welcome', 'profile', 'complete'],
+  steps: ['welcome', 'restore', 'profile', 'targets', 'complete'],
 
-  async init(container) {
+  async init(container, { initialStep = 'welcome' } = {}) {
     this.container = container;
+    this.currentStep = Math.max(0, this.steps.indexOf(initialStep));
     this.render();
   },
 
@@ -45,7 +56,9 @@ const Onboarding = {
     const step = this.steps[this.currentStep];
     switch (step) {
       case 'welcome':  this.renderWelcome();  break;
+      case 'restore':  this.renderRestore();  break;
       case 'profile':  this.renderProfile();  break;
+      case 'targets':  this.renderTargets();  break;
       case 'complete': this.renderComplete(); break;
     }
   },
@@ -65,7 +78,10 @@ const Onboarding = {
           <div class="onboard-tagline">Smart food & water tracking</div>
           <div class="onboard-actions fade-up">
             <button class="btn btn-primary btn-lg btn-full" id="btn-new-account">
-              Get started
+              Create new profile
+            </button>
+            <button class="btn btn-secondary btn-lg btn-full" id="btn-restore-account">
+              Restore from cloud
             </button>
           </div>
         </div>
@@ -73,7 +89,144 @@ const Onboarding = {
     `;
 
     document.getElementById('btn-new-account').addEventListener('click', () => {
-      this.next();
+      this.currentStep = this.steps.indexOf('profile');
+      this.render();
+    });
+
+    document.getElementById('btn-restore-account').addEventListener('click', () => {
+      this.currentStep = this.steps.indexOf('restore');
+      this.render();
+    });
+  },
+
+  // ─── Step: Restore ─────────────────────────────────────────────────────────
+
+  async renderRestore() {
+    const [provider, clientConfig] = await Promise.all([
+      Auth.getProvider(),
+      Auth.getClientConfigStatus()
+    ]);
+    const providerLabel = provider === 'microsoft'
+      ? 'OneDrive'
+      : provider === 'google'
+        ? 'Google Drive'
+        : 'Not connected';
+
+    this.container.innerHTML = `
+      <div class="onboard-screen" id="step-restore">
+        <div class="onboard-hero" style="flex:unset;padding:40px 32px 24px;">
+          <div class="onboard-logo" style="font-size:2.2rem">Bite<span>Wise</span></div>
+        </div>
+        <div class="onboard-card">
+          <div class="onboard-card-handle"></div>
+          <div class="onboard-step-title fade-up fade-up-1">Restore your journal</div>
+          <div class="onboard-step-sub fade-up fade-up-2">
+            Connect Google Drive or OneDrive to restore an existing BiteWise backup on this device.
+          </div>
+
+          <div class="card" style="background:var(--cream-50);margin-bottom:16px;">
+            <div class="card-padded">
+              <div style="display:flex;justify-content:space-between;gap:12px;font-size:0.86rem;">
+                <span style="color:var(--text-muted);">Provider</span>
+                <span style="font-weight:600;color:var(--text-dark);">${providerLabel}</span>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px;">
+            <button class="btn btn-secondary" id="btn-onboard-onedrive">OneDrive</button>
+            <button class="btn btn-secondary" id="btn-onboard-google">Google Drive</button>
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="onboard-onedrive-client-id">OneDrive client ID</label>
+            <input
+              class="form-input"
+              type="text"
+              id="onboard-onedrive-client-id"
+              value="${escapeAttr(clientConfig.microsoftClientId)}"
+              placeholder="Paste Microsoft Azure client ID"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+            />
+          </div>
+
+          <div class="form-group">
+            <label class="form-label" for="onboard-google-client-id">Google Drive client ID</label>
+            <input
+              class="form-input"
+              type="text"
+              id="onboard-google-client-id"
+              value="${escapeAttr(clientConfig.googleClientId)}"
+              placeholder="Paste Google OAuth client ID"
+              autocomplete="off"
+              autocapitalize="off"
+              spellcheck="false"
+            />
+          </div>
+
+          <div id="restore-error" class="form-error" style="display:none;margin-bottom:12px;"></div>
+
+          <button class="btn btn-primary btn-full btn-lg" id="btn-run-restore" ${provider ? '' : 'disabled'}>
+            Restore backup
+          </button>
+          <button class="btn btn-ghost btn-full" id="btn-create-instead" style="margin-top:10px;">
+            Create new profile instead
+          </button>
+        </div>
+      </div>
+    `;
+
+    const errorEl = document.getElementById('restore-error');
+    const showError = (message) => {
+      errorEl.textContent = message;
+      errorEl.style.display = 'block';
+    };
+
+    document.getElementById('btn-onboard-onedrive').addEventListener('click', async () => {
+      try {
+        await Auth.saveClientId('microsoft', document.getElementById('onboard-onedrive-client-id').value);
+        await Auth.Microsoft.startLogin();
+      } catch (err) {
+        showError(err.message);
+      }
+    });
+
+    document.getElementById('btn-onboard-google').addEventListener('click', async () => {
+      try {
+        await Auth.saveClientId('google', document.getElementById('onboard-google-client-id').value);
+        await Auth.Google.startLogin();
+      } catch (err) {
+        showError(err.message);
+      }
+    });
+
+    document.getElementById('btn-run-restore')?.addEventListener('click', async () => {
+      const button = document.getElementById('btn-run-restore');
+      button.disabled = true;
+      button.textContent = 'Restoring...';
+      errorEl.style.display = 'none';
+
+      try {
+        const result = await Sync.restore();
+        if (!result.hadData) {
+          showError('No BiteWise backup was found for this provider.');
+          button.disabled = false;
+          button.textContent = 'Restore backup';
+          return;
+        }
+        window.dispatchEvent(new CustomEvent('onboarding-complete'));
+      } catch (err) {
+        showError(err.message || 'Restore failed.');
+        button.disabled = false;
+        button.textContent = 'Restore backup';
+      }
+    });
+
+    document.getElementById('btn-create-instead').addEventListener('click', () => {
+      this.currentStep = this.steps.indexOf('profile');
+      this.render();
     });
   },
 
@@ -90,6 +243,7 @@ const Onboarding = {
           <div class="progress-dots">
             <div class="progress-dot done"></div>
             <div class="progress-dot active"></div>
+            <div class="progress-dot"></div>
           </div>
           <div class="onboard-step-title fade-up fade-up-1">Tell us about yourself</div>
           <div class="onboard-step-sub fade-up fade-up-2">
@@ -208,7 +362,7 @@ const Onboarding = {
           dob,
           email,
           water_unit: units,
-          onboarding_complete: true,
+          onboarding_complete: false,
           created_at: new Date().toISOString()
         });
         this.next();
@@ -217,6 +371,104 @@ const Onboarding = {
         errorEl.style.display = 'block';
         console.error('Profile save error:', err);
       }
+    });
+  },
+
+  // ─── Step: Targets ──────────────────────────────────────────────────────────
+
+  async renderTargets() {
+    const profile = await Profile.get();
+    const waterUnit = profile?.water_unit || 'oz';
+
+    this.container.innerHTML = `
+      <div class="onboard-screen" id="step-targets">
+        <div class="onboard-hero" style="flex:unset;padding:40px 32px 24px;">
+          <div class="onboard-logo" style="font-size:2.2rem">Bite<span>Wise</span></div>
+        </div>
+        <div class="onboard-card">
+          <div class="onboard-card-handle"></div>
+          <div class="progress-dots">
+            <div class="progress-dot done"></div>
+            <div class="progress-dot done"></div>
+            <div class="progress-dot active"></div>
+          </div>
+          <div class="onboard-step-title fade-up fade-up-1">Set daily goals</div>
+          <div class="onboard-step-sub fade-up fade-up-2">
+            These are optional and can be changed later in Settings.
+          </div>
+
+          <form id="targets-form" novalidate>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div class="form-group fade-up fade-up-2">
+                <label class="form-label" for="onboard-t-calories">Calories (kcal)</label>
+                <input class="form-input" type="number" id="onboard-t-calories" placeholder="e.g. 2000" min="0" inputmode="decimal" />
+              </div>
+              <div class="form-group fade-up fade-up-2">
+                <label class="form-label" for="onboard-t-protein">Protein (g)</label>
+                <input class="form-input" type="number" id="onboard-t-protein" placeholder="optional" min="0" inputmode="decimal" />
+              </div>
+              <div class="form-group fade-up fade-up-3">
+                <label class="form-label" for="onboard-t-carbs">Carbs (g)</label>
+                <input class="form-input" type="number" id="onboard-t-carbs" placeholder="optional" min="0" inputmode="decimal" />
+              </div>
+              <div class="form-group fade-up fade-up-3">
+                <label class="form-label" for="onboard-t-fat">Fat (g)</label>
+                <input class="form-input" type="number" id="onboard-t-fat" placeholder="optional" min="0" inputmode="decimal" />
+              </div>
+              <div class="form-group fade-up fade-up-4">
+                <label class="form-label" for="onboard-t-water">Water (${waterUnit})</label>
+                <input class="form-input" type="number" id="onboard-t-water" placeholder="optional" min="0" inputmode="decimal" />
+              </div>
+            </div>
+
+            <div id="targets-error" class="form-error" style="display:none;margin-bottom:12px;"></div>
+
+            <button class="btn btn-primary btn-full btn-lg fade-up fade-up-4" type="submit">
+              Save goals
+            </button>
+            <button class="btn btn-ghost btn-full fade-up fade-up-4" id="btn-skip-targets" type="button" style="margin-top:10px;">
+              Skip for now
+            </button>
+          </form>
+        </div>
+      </div>
+    `;
+
+    const val = (id) => {
+      const v = parseFloat(document.getElementById(id).value);
+      return Number.isNaN(v) ? null : v;
+    };
+
+    const finish = async ({ saveTargets }) => {
+      const errorEl = document.getElementById('targets-error');
+      errorEl.style.display = 'none';
+
+      try {
+        if (saveTargets) {
+          await Targets.save({
+            calories:   val('onboard-t-calories'),
+            protein:    val('onboard-t-protein'),
+            carbs:      val('onboard-t-carbs'),
+            fat:        val('onboard-t-fat'),
+            water:      val('onboard-t-water'),
+            water_unit: waterUnit
+          });
+        }
+        await this.completeOnboarding();
+      } catch (err) {
+        errorEl.textContent = 'Failed to save goals. Please try again.';
+        errorEl.style.display = 'block';
+        console.error('Targets save error:', err);
+      }
+    };
+
+    document.getElementById('targets-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      await finish({ saveTargets: true });
+    });
+
+    document.getElementById('btn-skip-targets').addEventListener('click', async () => {
+      await finish({ saveTargets: false });
     });
   },
 
@@ -248,12 +500,8 @@ const Onboarding = {
   // ─── Completion ─────────────────────────────────────────────────────────────
 
   async completeOnboarding() {
-    try {
-      const profile = await Profile.get();
-      await Profile.save({ ...profile, onboarding_complete: true });
-    } catch (err) {
-      console.error('Error completing onboarding:', err);
-    }
+    const profile = await Profile.get();
+    await Profile.save({ ...profile, onboarding_complete: true });
     this.next();
   }
 };

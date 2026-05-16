@@ -3,13 +3,14 @@
 // other than the user's chosen cloud backup provider (OneDrive or Google Drive).
 
 const DB_NAME = 'bitewise';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 // Object store definitions
 const STORES = {
   PROFILE:      'profile',       // Single record: user identity and preferences
   FOOD_LOG:     'food_log',      // Daily meal entries
   WATER_LOG:    'water_log',     // Daily water intake entries
+  WEIGHT_LOG:   'weight_log',    // Daily weigh-ins
   FOODS:        'foods',         // Cached USDA food records and user-created foods
   RECIPES:      'recipes',       // User-defined dishes (composite foods)
   TARGETS:      'targets',       // User-defined daily nutrition/water targets
@@ -54,6 +55,12 @@ function openDB() {
           autoIncrement: true
         });
         waterLog.createIndex('by_date', 'date', { unique: false });
+      }
+
+      // Weight log - one weigh-in per date
+      if (!db.objectStoreNames.contains(STORES.WEIGHT_LOG)) {
+        const weightLog = db.createObjectStore(STORES.WEIGHT_LOG, { keyPath: 'date' });
+        weightLog.createIndex('by_date', 'date', { unique: true });
       }
 
       // Foods cache - USDA foods and user-created foods
@@ -271,6 +278,44 @@ const WaterLog = {
   }
 };
 
+// ─── Weight Log ───────────────────────────────────────────────────────────────
+
+/**
+ * A weight log entry schema:
+ * {
+ *   date: 'YYYY-MM-DD',
+ *   amount: number,
+ *   unit: 'lb' | 'kg',
+ *   logged_at: ISO string,
+ *   updated_at: ISO string
+ * }
+ */
+const WeightLog = {
+  async save(entry) {
+    const existing = await get(STORES.WEIGHT_LOG, entry.date);
+    const timestamp = new Date().toISOString();
+    return put(STORES.WEIGHT_LOG, {
+      ...existing,
+      ...entry,
+      logged_at: existing?.logged_at || timestamp,
+      updated_at: timestamp
+    });
+  },
+  async delete(dateStr) {
+    return remove(STORES.WEIGHT_LOG, dateStr);
+  },
+  async getByDate(dateStr) {
+    return get(STORES.WEIGHT_LOG, dateStr);
+  },
+  async getByDateRange(startDate, endDate) {
+    const range = IDBKeyRange.bound(startDate, endDate);
+    return getByIndexRange(STORES.WEIGHT_LOG, 'by_date', range);
+  },
+  async getAll() {
+    return getAll(STORES.WEIGHT_LOG);
+  }
+};
+
 // ─── Foods Cache ──────────────────────────────────────────────────────────────
 
 const Foods = {
@@ -371,10 +416,11 @@ const SyncMeta = {
  * This is what gets written to OneDrive or Google Drive.
  */
 async function exportAllData() {
-  const [profile, foodLog, waterLog, foods, recipes, targets] = await Promise.all([
+  const [profile, foodLog, waterLog, weightLog, foods, recipes, targets] = await Promise.all([
     getAll(STORES.PROFILE),
     getAll(STORES.FOOD_LOG),
     getAll(STORES.WATER_LOG),
+    getAll(STORES.WEIGHT_LOG),
     getAll(STORES.FOODS),
     getAll(STORES.RECIPES),
     getAll(STORES.TARGETS)
@@ -386,6 +432,7 @@ async function exportAllData() {
     profile,
     food_log: foodLog,
     water_log: waterLog,
+    weight_log: weightLog,
     foods,
     recipes,
     targets
@@ -403,6 +450,7 @@ async function importAllData(data) {
     [STORES.PROFILE, data.profile],
     [STORES.FOOD_LOG, data.food_log],
     [STORES.WATER_LOG, data.water_log],
+    [STORES.WEIGHT_LOG, data.weight_log],
     [STORES.FOODS, data.foods],
     [STORES.RECIPES, data.recipes],
     [STORES.TARGETS, data.targets]
@@ -438,6 +486,7 @@ export {
   Profile,
   FoodLog,
   WaterLog,
+  WeightLog,
   Foods,
   Recipes,
   Targets,

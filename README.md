@@ -4,7 +4,8 @@ Smart food and water tracking. Your data stays on your device.
 
 ## What It Does
 
-BiteWise is a progressive web app (PWA) for tracking daily meals and water intake.
+BiteWise is a progressive web app (PWA) for tracking daily meals, water intake,
+and daily weigh-ins.
 Food nutrition data is pulled from the USDA FoodData Central database.
 All data is stored locally using IndexedDB. Optional cloud backups go directly to
 your Google Drive or OneDrive app storage after you connect a provider.
@@ -14,6 +15,7 @@ your Google Drive or OneDrive app storage after you connect a provider.
 - **Food logging** — Search USDA FoodData Central, saved/custom foods, or your own backend menu tables
 - **Meal slots** — Breakfast, Lunch, Dinner, and Snacks with snack motivation tracking
 - **Water tracking** — Fluid ounces or milliliters, user-selectable
+- **Weight tracking** — One daily weigh-in with weekly and monthly trends
 - **Nutrition** — Calories (required), plus optional protein, carbs, fat, fiber, sugar, sodium, saturated fat
 - **Daily targets** — All optional; baseline-first approach encouraged
 - **Dashboard** — Daily, weekly (7-day), and monthly (30-day) trend views
@@ -57,8 +59,18 @@ and add your deployed BiteWise URL as a single-page application redirect URI.
 For Google, create an OAuth web client, enable the Google Drive API, and add the
 same deployed BiteWise URL as an authorized redirect URI.
 
+If Google shows "Access blocked" or says the app has not completed verification,
+open Google Auth Platform for that project. For personal use, keep the publishing
+status in Testing and add the exact Google account you are signing in with under
+Test users. For broader use, publish the app and complete Google's OAuth
+verification process before users outside the test list can connect.
+
 Backups are stored as `bitewise-backup.json`. OneDrive stores it in the app root
 folder, and Google Drive stores it in the hidden `appDataFolder`.
+
+On a new browser or device with no local BiteWise profile, the welcome screen
+lets you either create a new profile or connect Google Drive/OneDrive and restore
+an existing backup before entering the app.
 
 ### 4. Bundled food tables
 
@@ -167,7 +179,7 @@ docs/
     ├── sync.js         # OneDrive and Google Drive backup/restore
     ├── onboarding.js   # First-run flow
     ├── food.js         # USDA/backend API + food utilities
-    ├── log.js          # Meal/water logging screen
+    ├── log.js          # Meal/water/weight logging screen
     ├── dashboard.js    # Trends and analytics screen
     └── settings.js     # Settings screen
 ```
@@ -183,6 +195,7 @@ All data is stored in an IndexedDB database named `bitewise` with these object s
 | `profile`    | Name, birthday, email, preferences   |
 | `food_log`   | Meal entries with nutrition           |
 | `water_log`  | Water intake entries                  |
+| `weight_log` | Daily weigh-ins                       |
 | `foods`      | Cached USDA foods + custom/backend foods |
 | `recipes`    | User-defined dishes                   |
 | `targets`    | Daily nutrition/water goals           |
